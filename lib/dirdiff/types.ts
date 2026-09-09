@@ -124,6 +124,12 @@ export interface SyncResult extends SyncPlan {
 export interface GitRef {
   name: string;
   type: "branch" | "tag";
+  /** Short commit hash (7 chars) the ref points at. */
+  oid?: string;
+  /** Unix seconds of the ref tip commit. */
+  date?: number;
+  /** True when <ref> is the currently checked-out branch. */
+  current?: boolean;
 }
 
 export interface GitInfo {

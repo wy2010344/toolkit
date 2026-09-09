@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ArrowsLeftRight, FolderOpen, GitBranch, MagnifyingGlass } from "@phosphor-icons/react/dist/ssr";
+import { ArrowsLeftRight, FolderOpen, MagnifyingGlass } from "@phosphor-icons/react/dist/ssr";
 import { Button, IconButton, Notice, ProgressBar, Spinner, Toggle, cn } from "@/components/ui";
 import { basename, formatCount, formatDuration } from "@/lib/dirdiff/format";
 import { fetchGroups, gitCheckout, gitStatus, postJson, streamCompare } from "@/lib/dirdiff/client";
@@ -15,6 +15,7 @@ import type {
 import { GroupRail } from "./GroupRail";
 import { EntryDetail } from "./EntryDetail";
 import { ResultPanes } from "./ResultPanes";
+import { RefPicker } from "./RefPicker";
 import { SyncPanel } from "./SyncPanel";
 
 type CompareState =
@@ -551,31 +552,15 @@ function PathField({
           {busy ? <Spinner className="h-4 w-4" /> : <FolderOpen size={15} />}
         </IconButton>
       </div>
-      {git?.isRepo && (
-        <div className="mt-1.5 flex min-w-0 items-center gap-1.5 border-t border-dashed border-line pt-1.5">
-          <GitBranch size={11} className="shrink-0 text-faint" />
-          {gitBusy ? (
-            <Spinner className="h-3 w-3 shrink-0 text-muted" />
-          ) : (
-            <select
-              value={git.branch ?? ""}
-              onChange={(e) => onCheckout?.(e.target.value)}
-              className="h-6 min-w-0 flex-1 truncate rounded border border-line bg-surface px-1.5 font-mono text-[11px] text-muted outline-none focus:border-line-strong focus:ring-2 focus:ring-ink/10"
-              title="切换分支 / 标签(对该目录执行 git checkout)"
-            >
-              <option value={git.branch ?? ""} disabled hidden>
-                {git.branch ?? "已分离 HEAD"}
-              </option>
-              {git.refs?.map((r) => (
-                <option key={`${r.type}-${r.name}`} value={r.name}>
-                  {r.name}
-                </option>
-              ))}
-            </select>
-          )}
-          <span className="shrink-0 font-mono text-[10px] text-faint" title={git.root}>
-            {git.branch ?? ""}
-          </span>
+      {git?.isRepo && git.refs && (
+        <div className="mt-1.5 border-t border-dashed border-line pt-1.5">
+          <RefPicker
+            refs={git.refs}
+            current={git.branch ?? null}
+            root={git.root}
+            busy={!!gitBusy}
+            onPick={(ref) => onCheckout?.(ref)}
+          />
         </div>
       )}
     </div>

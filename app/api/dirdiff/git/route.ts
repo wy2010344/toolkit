@@ -46,14 +46,24 @@ export async function POST(req: NextRequest): Promise<Response> {
       runGit(path, ["rev-parse", "--show-toplevel"]),
       runGit(path, ["branch", "--show-current"]),
     ]);
-    const [heads, tags] = await Promise.all([
-      runGit(path, ["for-each-ref", "refs/heads", "--format=%(refname:short)"]),
-      runGit(path, ["for-each-ref", "refs/tags", "--format=%(refname:short)"]),
+    const forEach = await runGit(path, [
+      "for-each-ref",
+      "refs/heads",
+      "refs/tags",
+      "--format=%(refname)%00%(refname:short)%00%(objectname:short)%00%(*objectname:short)%00%(committerdate:unix)",
     ]);
-    const refs: GitInfo["refs"] = [
-      ...heads.stdout.split("\n").filter(Boolean).map((name) => ({ name, type: "branch" as const })),
-      ...tags.stdout.split("\n").filter(Boolean).map((name) => ({ name, type: "tag" as const })),
-    ];
+    const refs: GitInfo["refs"] = [];
+    for (const line of forEach.stdout.split("\n")) {
+      if (!line) continue;
+      const [full, name, oid, derefOid, date] = line.split("\0");
+      refs.push({
+        name,
+        type: full.startsWith("refs/tags/") ? "tag" : "branch",
+        oid: derefOid || oid,
+        date: Number(date) || undefined,
+        current: branch.stdout === name,
+      });
+    }
     const info: GitInfo = {
       isRepo: true,
       root: root.stdout,
