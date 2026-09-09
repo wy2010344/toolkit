@@ -56,6 +56,7 @@ export async function compareDirs(
   const rightMap = new Map(right.entries.map((e) => [keyOf(e.rel), e]));
   const allKeys = new Set([...leftMap.keys(), ...rightMap.keys()]);
 
+  const ignoreDirs = req.ignoreDirs ?? true;
   const pending: PendingPair[] = [];
   const entries: CompareEntry[] = [];
 
@@ -68,13 +69,24 @@ export async function compareDirs(
         continue; // both sides have this dir; the files inside carry the differences
       }
       if (leftNode.type !== rightNode.type) {
-        entries.push({
-          rel: leftNode.rel,
-          type: leftNode.type,
-          status: "conflict",
-          left: metaOf(leftNode),
-          right: metaOf(rightNode),
-        });
+        if (ignoreDirs) {
+          // one side is a directory: under file-only mode the file side wins
+          const fileNode = leftNode.type === "file" ? leftNode : rightNode;
+          entries.push({
+            rel: fileNode.rel,
+            type: "file",
+            status: leftNode.type === "file" ? "left-only" : "right-only",
+            ...(leftNode.type === "file" ? { left: metaOf(fileNode) } : { right: metaOf(fileNode) }),
+          });
+        } else {
+          entries.push({
+            rel: leftNode.rel,
+            type: leftNode.type,
+            status: "conflict",
+            left: metaOf(leftNode),
+            right: metaOf(rightNode),
+          });
+        }
         continue;
       }
       if (leftNode.size !== rightNode.size) {
@@ -96,6 +108,7 @@ export async function compareDirs(
     }
 
     const node = leftNode ?? rightNode!;
+    if (ignoreDirs && node.type === "dir") continue; // folder-only differences are ignored
     const status: EntryStatus = leftNode ? "left-only" : "right-only";
     entries.push({
       rel: node.rel,

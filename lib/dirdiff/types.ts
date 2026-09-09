@@ -31,6 +31,8 @@ export interface CompareRequest {
   includeHidden: boolean;
   /** Also list files that are identical on both sides (default false). */
   includeEqual?: boolean;
+  /** Skip directory entries entirely: only files are compared (default true). */
+  ignoreDirs?: boolean;
 }
 
 export interface CompareStats {
@@ -66,6 +68,7 @@ export interface DiffGroup {
   right: string;
   ignore: string[];
   includeHidden: boolean;
+  ignoreDirs: boolean;
   createdAt: number;
   updatedAt: number;
 }

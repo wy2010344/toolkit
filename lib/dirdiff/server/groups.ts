@@ -37,6 +37,7 @@ export type GroupInput = {
   right: string;
   ignore: string[];
   includeHidden: boolean;
+  ignoreDirs?: boolean;
 };
 
 export async function saveGroup(input: GroupInput): Promise<DiffGroup> {
@@ -48,6 +49,7 @@ export async function saveGroup(input: GroupInput): Promise<DiffGroup> {
     right: input.right.trim(),
     ignore: dedupe(input.ignore.map((s) => s.trim()).filter(Boolean)),
     includeHidden: !!input.includeHidden,
+    ignoreDirs: input.ignoreDirs ?? true,
   };
 
   if (input.id) {
@@ -82,6 +84,7 @@ function clean(value: unknown): DiffGroup | null {
     right: typeof g.right === "string" ? g.right : "",
     ignore: Array.isArray(g.ignore) ? g.ignore.filter((s): s is string => typeof s === "string") : [],
     includeHidden: g.includeHidden === true,
+    ignoreDirs: g.ignoreDirs !== false,
     createdAt: typeof g.createdAt === "number" ? g.createdAt : 0,
     updatedAt: typeof g.updatedAt === "number" ? g.updatedAt : 0,
   };

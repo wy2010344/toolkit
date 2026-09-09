@@ -4,12 +4,12 @@ import { listGroups, saveGroup, deleteGroup, type GroupInput } from "@/lib/dirdi
 function parseBody(body: unknown): GroupInput | null {
   if (!body || typeof body !== "object") return null;
   const b = body as Record<string, unknown>;
-  const { id, name, left, right, ignore, includeHidden } = b;
+  const { id, name, left, right, ignore, includeHidden, ignoreDirs } = b;
   if (id !== undefined && typeof id !== "string") return null;
   if (typeof name !== "string" || typeof left !== "string" || typeof right !== "string") return null;
   const ignoreArr =
     Array.isArray(ignore) && ignore.every((s) => typeof s === "string") ? (ignore as string[]) : [];
-  return { id, name, left, right, ignore: ignoreArr, includeHidden: includeHidden === true };
+  return { id, name, left, right, ignore: ignoreArr, includeHidden: includeHidden === true, ignoreDirs: ignoreDirs !== false };
 }
 
 export async function GET() {

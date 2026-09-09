@@ -32,6 +32,7 @@ interface Draft {
   ignoreText: string;
   includeHidden: boolean;
   includeEqual: boolean;
+  ignoreDirs: boolean;
 }
 
 interface Toast {
@@ -42,7 +43,7 @@ interface Toast {
 const DEFAULT_IGNORE = ["node_modules", "*.log", ".DS_Store"].join("\n");
 
 function emptyDraft(): Draft {
-  return { name: "", left: "", right: "", ignoreText: DEFAULT_IGNORE, includeHidden: false, includeEqual: false };
+  return { name: "", left: "", right: "", ignoreText: DEFAULT_IGNORE, includeHidden: false, includeEqual: false, ignoreDirs: true };
 }
 
 export function DirDiffApp() {
@@ -134,6 +135,7 @@ export function DirDiffApp() {
       draft.left !== currentGroup.left ||
       draft.right !== currentGroup.right ||
       draft.includeHidden !== currentGroup.includeHidden ||
+      draft.ignoreDirs !== currentGroup.ignoreDirs ||
       splitIgnore(draft.ignoreText).join("\n") !== currentGroup.ignore.join("\n")
     );
   }, [draft, currentGroup]);
@@ -153,6 +155,7 @@ export function DirDiffApp() {
       ignoreText: g.ignore.join("\n"),
       includeHidden: g.includeHidden,
       includeEqual: draft.includeEqual,
+      ignoreDirs: g.ignoreDirs,
     });
     runCompare({
       left: g.left,
@@ -160,6 +163,7 @@ export function DirDiffApp() {
       ignore: g.ignore,
       includeHidden: g.includeHidden,
       includeEqual: true,
+      ignoreDirs: g.ignoreDirs,
     });
   }
 
@@ -179,6 +183,7 @@ export function DirDiffApp() {
         right: draft.right.trim(),
         ignore: splitIgnore(draft.ignoreText),
         includeHidden: draft.includeHidden,
+        ignoreDirs: draft.ignoreDirs,
       });
       setGroups(await fetchGroups());
       setActiveId(group.id);
@@ -215,6 +220,7 @@ export function DirDiffApp() {
     ignore: string[];
     includeHidden: boolean;
     includeEqual?: boolean;
+    ignoreDirs?: boolean;
   }) {
     const payload = req ?? {
       left: draft.left.trim(),
@@ -222,6 +228,7 @@ export function DirDiffApp() {
       ignore: splitIgnore(draft.ignoreText),
       includeHidden: draft.includeHidden,
       includeEqual: true,
+      ignoreDirs: draft.ignoreDirs,
     };
     setFilter("diff");
     setCompare({ phase: "running", progress: null });
@@ -346,6 +353,12 @@ export function DirDiffApp() {
               />
             </label>
             <div className="flex min-w-[220px] flex-col gap-3 pt-5">
+              <Toggle
+                label="忽略文件夹"
+                hint="只对比文件;仅目录层面的差异不显示"
+                checked={draft.ignoreDirs}
+                onChange={(v) => patch({ ignoreDirs: v })}
+              />
               <Toggle
                 label="忽略隐藏文件 / 目录"
                 hint="以 . 开头的名称(如 .git)默认排除"

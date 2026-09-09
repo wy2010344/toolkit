@@ -36,6 +36,7 @@ export async function POST(req: NextRequest) {
             ignore: body.ignore ?? [],
             includeHidden: body.includeHidden ?? false,
             includeEqual: body.includeEqual ?? false,
+            ignoreDirs: body.ignoreDirs ?? true,
           },
           (p) => send({ type: "progress", ...p }),
         );
