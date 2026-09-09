@@ -1,26 +1,83 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  --color-ink: #211f1b;
+  --color-ink-soft: #3a372f;
+  --color-muted: #76726a;
+  --color-faint: #9b978e;
+  --color-line: #e6e3db;
+  --color-line-strong: #d6d2c8;
+  --color-canvas: #f5f3ee;
+  --color-surface: #ffffff;
+  --color-surface-mute: #efede8;
+
+  /* muted pastel accents (semantic) */
+  --color-acc-blue-bg: #e1f3fe;
+  --color-acc-blue-fg: #1f6c9f;
+  --color-acc-yellow-bg: #fbf3db;
+  --color-acc-yellow-fg: #956400;
+  --color-acc-red-bg: #f9e3e4;
+  --color-acc-red-fg: #9f2f2d;
+  --color-acc-orange-bg: #f3e2d6;
+  --color-acc-orange-fg: #9a5411;
+  --color-acc-green-bg: #edf3ec;
+  --color-acc-green-fg: #346538;
+}
+
+:root {
+  --background: #f5f3ee;
+  --foreground: #211f1b;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #171614;
+    --foreground: #eceae4;
   }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* indeterminate progress bar */
+@keyframes dirdiff-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+.dirdiff-bar-indeterminate {
+  animation: dirdiff-indeterminate 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* rows in very long result lists render only when visible */
+.dirdiff-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 40px;
+}
+
+/* diff word-level marks */
+.dirdiff-ins {
+  background: #d8ecdb;
+}
+.dirdiff-del {
+  background: #f6d7d9;
+}
+@media (prefers-color-scheme: dark) {
+  .dirdiff-ins {
+    background: #24472a;
+  }
+  .dirdiff-del {
+    background: #552d2f;
+  }
 }

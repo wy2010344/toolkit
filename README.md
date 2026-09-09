@@ -1,36 +1,54 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 工具箱
 
-## Getting Started
+本地运行的小工具合集(Next.js 16 App Router + React 19 + Tailwind CSS 4)。
 
-First, run the development server:
+## 运行
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+打开 http://localhost:3000。当前包含一个工具:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 目录对比同步 (`/tools/dir-diff`)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+逐文件对比两个目录的内容,**不依赖 git**,按内容哈希(SHA-1)判定文件是否一致,适合本地大目录的增量核对与镜像。
 
-## Learn More
+- **对比**:遍历两侧目录,先以 size 短路,再对大小相同的文件做流式哈希比对。进度以 NDJSON 流式实时上报(walk / hash 两阶段)。
+- **忽略规则**:每行一个 gitignore 风格模式(基于 `ignore` 包),内置恒忽略 `.git`;支持 `!` 取反。可勾选「忽略隐藏文件」。
+- **差异查看**:点击条目弹出模态框,文本文件做左右并排的内联 diff(含行内词级高亮,>2 MB 的文件跳过内联);单侧文件显示预览;冲突(一侧是文件一侧是目录)提示手动处理。
+- **同步**:选择方向(A→B 或 B→A),先「预览计划」——列出将复制 / 删除 / 跳过的条目与总字节数,确认后执行。执行结果实时回显,完成后自动重新对比。删除目标侧独有条目需显式勾选(即为镜像)。
+- **对比方案**:左右目录 + 忽略规则可存成本地方案(保存在 `data/dirdiff-groups.json`,仅本机可见,裁剪后不随仓库提交)。
 
-To learn more about Next.js, take a look at the following resources:
+**目录选择**:点击路径栏的「浏览」会调用系统原生目录选择器(Windows: WinForms;macOS: osascript;Linux: kdialog/zenity),也可以直接手填路径。
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 架构
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+app/
+  tools/dir-diff/page.tsx       工具页(挂载客户端应用)
+  api/dirdiff/
+    compare/route.ts            对比任务 · NDJSON 流式进度
+    contents/route.ts           单文件内容(文本 / 二进制 / 过大判定)
+    sync/route.ts               同步(含 dryRun 只出计划)
+    groups/route.ts             方案的增删改查
+    browse/route.ts             系统原生目录选择器
+lib/dirdiff/
+  server/                       walk / ignore / compare / sync / groups / text / browse / fsutils
+  client.ts                     客户端 API 封装(含流式解析)
+  types.ts · format.ts          共享类型与格式化
+components/dirdiff/             DirDiffApp / GroupRail / SyncPanel / ResultTable 等
+data/dirdiff-groups.json        保存的对比方案(运行时数据)
+```
 
-## Deploy on Vercel
+进程内多路并发有硬上限(哈希 16、同步 8),避免大目录对比时打挂机器。
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 常用命令
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+pnpm dev        # 开发
+pnpm lint       # eslint
+pnpm build      # 生产构建(含 typecheck)
+pnpm start      # 生产运行
+```
