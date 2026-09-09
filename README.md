@@ -15,7 +15,8 @@ pnpm dev
 
 逐文件对比两个目录的内容,**不依赖 git**,按内容哈希(SHA-1)判定文件是否一致,适合本地大目录的增量核对与镜像。
 
-- **对比**:遍历两侧目录,先以 size 短路,再对大小相同的文件做流式哈希比对。进度以 NDJSON 流式实时上报(walk / hash 两阶段)。
+- **对比**:遍历两侧目录,先以 size 短路,再对大小相同的文件做流式哈希比对。进度以 NDJSON 流式实时上报(walk / hash 两阶段)。结果以 A / B 两棵目录树并排展示,可折叠子树,条目按差异着色(仅 A / 仅 B / 已修改 / 冲突)。
+- **git 分支切换**:若某侧路径是一个 git 仓库,路径栏下方会出现分支 / 标签下拉(可选分支与标签),选中即以 `git checkout` 切换到该引用;切换后自动重新对比。检测为合法仓库时通过 `git -C <path>` 调用,不经过 shell,引用名做了白名单校验。
 - **忽略规则**:每行一个 gitignore 风格模式(基于 `ignore` 包),内置恒忽略 `.git`;支持 `!` 取反。可勾选「忽略隐藏文件」。
 - **差异查看**:点击条目弹出模态框,文本文件做左右并排的内联 diff(含行内词级高亮,>2 MB 的文件跳过内联);单侧文件显示预览;冲突(一侧是文件一侧是目录)提示手动处理。
 - **同步**:选择方向(A→B 或 B→A),先「预览计划」——列出将复制 / 删除 / 跳过的条目与总字节数,确认后执行。执行结果实时回显,完成后自动重新对比。删除目标侧独有条目需显式勾选(即为镜像)。
@@ -34,11 +35,12 @@ app/
     sync/route.ts               同步(含 dryRun 只出计划)
     groups/route.ts             方案的增删改查
     browse/route.ts             系统原生目录选择器
+    git/route.ts                git 仓库探测(status)与分支 / 标签切换(checkout)
 lib/dirdiff/
   server/                       walk / ignore / compare / sync / groups / text / browse / fsutils
   client.ts                     客户端 API 封装(含流式解析)
   types.ts · format.ts          共享类型与格式化
-components/dirdiff/             DirDiffApp / GroupRail / SyncPanel / ResultTable 等
+components/dirdiff/             DirDiffApp / GroupRail / SyncPanel / ResultPanes / EntryDetail / DiffView 等
 data/dirdiff-groups.json        保存的对比方案(运行时数据)
 ```
 

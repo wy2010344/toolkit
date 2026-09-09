@@ -14,4 +14,5 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - 包管理器为 pnpm。Tailwind CSS 4(`@import "tailwindcss"` + `@theme inline`),设计 token 全部定义在 `app/globals.css` 顶部(ink/muted/faint/line/canvas/surface + acc-*,含暗色媒体查询),UI 一律用这些语义类,不写死颜色。
 - 客户端常用件在 `components/ui.tsx`(Button/IconButton/Toggle/Modal/Notice/StatusBadge/ProgressBar/Spinner 等);磷酸图标统一从 `@phosphor-icons/react/dist/ssr` 导入(客户端组件)。
 - 目录对比工具为 API 直连本机文件系统(非数据库);进度用 NDJSON 流式(`app/api/dirdiff/compare`),客户端在 `lib/dirdiff/client.ts` 里逐行解析。平台差异点:Windows/win32 路径前缀(\\?\ 与大小写不敏感)在 `lib/dirdiff/server/fsutils.ts` 与 `compare.ts`。
+- git 分支 / 标签切换走 `app/api/dirdiff/git`(status/checkout):ref 白名单正则 `^[A-Za-z0-9._/+-]+$` 且拒绝 `-`/`..` 开头,git 一律 `execFile` + `-C`,不经 shell。结果区为 A/B 两栏树 `components/dirdiff/ResultPanes.tsx`(客户端派生祖先目录)。
 - 用户运行在 Windows,命令验证请用 `pnpm lint` 与 `pnpm build`。

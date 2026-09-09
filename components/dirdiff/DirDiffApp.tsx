@@ -1,18 +1,20 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ArrowsLeftRight, CaretDown, FolderOpen, MagnifyingGlass } from "@phosphor-icons/react/dist/ssr";
-import { Button, IconButton, Notice, ProgressBar, Spinner, StatusBadge, Toggle, cn } from "@/components/ui";
-import { basename, formatBytes, formatCount, formatDuration, toPosix } from "@/lib/dirdiff/format";
-import { fetchGroups, postJson, streamCompare } from "@/lib/dirdiff/client";
+import { ArrowsLeftRight, FolderOpen, GitBranch, MagnifyingGlass } from "@phosphor-icons/react/dist/ssr";
+import { Button, IconButton, Notice, ProgressBar, Spinner, Toggle, cn } from "@/components/ui";
+import { basename, formatCount, formatDuration } from "@/lib/dirdiff/format";
+import { fetchGroups, gitCheckout, gitStatus, postJson, streamCompare } from "@/lib/dirdiff/client";
 import type {
   CompareEntry,
   CompareResult,
   DiffGroup,
+  GitInfo,
   ProgressPayload,
 } from "@/lib/dirdiff/types";
 import { GroupRail } from "./GroupRail";
 import { EntryDetail } from "./EntryDetail";
+import { ResultPanes } from "./ResultPanes";
 import { SyncPanel } from "./SyncPanel";
 
 type CompareState =
@@ -54,6 +56,65 @@ export function DirDiffApp() {
   const [detail, setDetail] = useState<CompareEntry | null>(null);
   const [syncOpen, setSyncOpen] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
+  const [gitMap, setGitMap] = useState<Record<string, GitInfo>>({});
+  const [gitBusy, setGitBusy] = useState<"A" | "B" | null>(null);
+
+  const leftPath = draft.left.trim();
+  const rightPath = draft.right.trim();
+  const gitA = gitMap[leftPath] ?? null;
+  const gitB = gitMap[rightPath] ?? null;
+
+  useEffect(() => {
+    const path = draft.left.trim();
+    if (!path) return;
+    const t = setTimeout(() => {
+      gitStatus(path)
+        .then((info) => {
+          if (info.isRepo) setGitMap((m) => ({ ...m, [path]: info }));
+        })
+        .catch(() => {});
+    }, 500);
+    return () => clearTimeout(t);
+  }, [draft.left]);
+
+  useEffect(() => {
+    const path = draft.right.trim();
+    if (!path) return;
+    const t = setTimeout(() => {
+      gitStatus(path)
+        .then((info) => {
+          if (info.isRepo) setGitMap((m) => ({ ...m, [path]: info }));
+        })
+        .catch(() => {});
+    }, 500);
+    return () => clearTimeout(t);
+  }, [draft.right]);
+
+  async function refreshGit(side: "A" | "B", path: string) {
+    const info = await gitStatus(path).catch(() => null);
+    setGitMap((m) => {
+      if (info?.isRepo) return { ...m, [path]: info };
+      const next = { ...m };
+      delete next[path];
+      return next;
+    });
+  }
+
+  async function checkout(side: "A" | "B", ref: string) {
+    const path = (side === "A" ? leftPath : rightPath).trim();
+    if (!path) return;
+    setGitBusy(side);
+    try {
+      const r = await gitCheckout(path, ref);
+      setToast({ tone: "ok", msg: `已切换到 ${r.branch ?? ref}` });
+      await refreshGit(side, path);
+      if (compare.phase === "done") runCompare();
+    } catch (err) {
+      setToast({ tone: "error", msg: (err as Error).message });
+    } finally {
+      setGitBusy(null);
+    }
+  }
 
   useEffect(() => {
     fetchGroups().then(setGroups).catch(() => {});
@@ -205,6 +266,9 @@ export function DirDiffApp() {
     all: result?.entries.length ?? 0,
   };
 
+  const paneLabelA = `${basename(leftPath) || "A"}${gitA?.branch ? ` · ${gitA.branch}` : ""}`;
+  const paneLabelB = `${basename(rightPath) || "B"}${gitB?.branch ? ` · ${gitB.branch}` : ""}`;
+
   return (
     <div className="flex h-dvh min-h-0 bg-canvas">
       <GroupRail
@@ -241,12 +305,15 @@ export function DirDiffApp() {
               label="源目录"
               value={draft.left}
               busy={browsing === "A"}
+              git={gitA}
+              gitBusy={gitBusy === "A"}
+              onCheckout={(ref) => checkout("A", ref)}
               onChange={(v) => patch({ left: v })}
               onBrowse={() => browse("A")}
-              className="min-w-[min(380px,100%)] flex-1"
+              className="min-w-[min(360px,100%)] flex-1"
             />
             <button
-              onClick={() => draft.left.trim() && draft.right.trim() && patch({ left: draft.right, right: draft.left })}
+              onClick={() => leftPath && rightPath && patch({ left: rightPath, right: leftPath })}
               className="mb-1 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-line text-muted transition-colors hover:bg-surface-mute hover:text-ink"
               title="交换 A / B"
             >
@@ -257,9 +324,12 @@ export function DirDiffApp() {
               label="目标目录"
               value={draft.right}
               busy={browsing === "B"}
+              git={gitB}
+              gitBusy={gitBusy === "B"}
+              onCheckout={(ref) => checkout("B", ref)}
               onChange={(v) => patch({ right: v })}
               onBrowse={() => browse("B")}
-              className="min-w-[min(380px,100%)] flex-1"
+              className="min-w-[min(360px,100%)] flex-1"
             />
           </div>
 
@@ -360,11 +430,11 @@ export function DirDiffApp() {
                 <span className="hidden shrink-0 sm:inline">点击条目可查看文本差异</span>
               </div>
 
-              <ResultTable
+              <ResultPanes
                 entries={visible}
+                leftLabel={paneLabelA}
+                rightLabel={paneLabelB}
                 onOpen={setDetail}
-                showEqual={draft.includeEqual}
-                totalVisible={visible.length}
               />
             </>
           )}
@@ -430,6 +500,9 @@ function PathField({
   label,
   value,
   busy,
+  git,
+  gitBusy,
+  onCheckout,
   onChange,
   onBrowse,
   className,
@@ -439,6 +512,9 @@ function PathField({
   label: string;
   value: string;
   busy: boolean;
+  git?: GitInfo | null;
+  gitBusy?: boolean;
+  onCheckout?: (ref: string) => void;
   onChange: (v: string) => void;
   onBrowse: () => void;
   className?: string;
@@ -462,71 +538,33 @@ function PathField({
           {busy ? <Spinner className="h-4 w-4" /> : <FolderOpen size={15} />}
         </IconButton>
       </div>
-    </div>
-  );
-}
-
-function ResultTable({
-  entries,
-  onOpen,
-  showEqual,
-  totalVisible,
-}: {
-  entries: CompareEntry[];
-  onOpen: (e: CompareEntry) => void;
-  showEqual: boolean;
-  totalVisible: number;
-}) {
-  if (entries.length === 0) {
-    return (
-      <div className="flex flex-1 items-center justify-center p-8">
-        <p className="text-[13px] text-faint">{showEqual ? "没有条目" : "没有差异,两个目录内容一致!"}</p>
-      </div>
-    );
-  }
-  return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="min-w-full">
-        <div className="sticky top-0 z-10 grid grid-cols-[76px_minmax(0,1fr)_150px_150px] gap-2 border-b border-line bg-canvas px-5 py-2 font-mono text-[10.5px] tracking-wider text-faint uppercase">
-          <span>状态</span>
-          <span>路径</span>
-          <span className="text-right">大小 (A · B)</span>
-          <span className="text-right">修改时间 (A)</span>
+      {git?.isRepo && (
+        <div className="mt-1.5 flex min-w-0 items-center gap-1.5 border-t border-dashed border-line pt-1.5">
+          <GitBranch size={11} className="shrink-0 text-faint" />
+          {gitBusy ? (
+            <Spinner className="h-3 w-3 shrink-0 text-muted" />
+          ) : (
+            <select
+              value={git.branch ?? ""}
+              onChange={(e) => onCheckout?.(e.target.value)}
+              className="h-6 min-w-0 flex-1 truncate rounded border border-line bg-surface px-1.5 font-mono text-[11px] text-muted outline-none focus:border-line-strong focus:ring-2 focus:ring-ink/10"
+              title="切换分支 / 标签(对该目录执行 git checkout)"
+            >
+              <option value={git.branch ?? ""} disabled hidden>
+                {git.branch ?? "已分离 HEAD"}
+              </option>
+              {git.refs?.map((r) => (
+                <option key={`${r.type}-${r.name}`} value={r.name}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          )}
+          <span className="shrink-0 font-mono text-[10px] text-faint" title={git.root}>
+            {git.branch ?? ""}
+          </span>
         </div>
-        {entries.map((e) => (
-          <button
-            key={e.rel}
-            onClick={() => e.type === "file" && e.status !== "equal" && onOpen(e)}
-            className={cn(
-              "dirdiff-row grid w-full grid-cols-[76px_minmax(0,1fr)_150px_150px] items-center gap-2 border-b border-line/60 bg-surface px-5 py-1.5 text-left transition-colors hover:bg-surface-mute/70",
-              e.status === "equal" && "hover:bg-transparent cursor-default",
-              e.type === "dir" && "cursor-default hover:bg-transparent",
-              e.status === "modified" && "bg-acc-red-bg/15",
-              e.status === "conflict" && "bg-acc-orange-bg/20",
-            )}
-          >
-            <StatusBadge status={e.status} muted={e.status === "equal"} />
-            <span className="flex min-w-0 items-center gap-1.5">
-              {e.type === "dir" && <CaretDown size={12} className="shrink-0 rotate-180 text-faint" />}
-              <span className="truncate font-mono text-[12px] text-ink">{toPosix(e.rel)}</span>
-              {e.error && <span className="shrink-0 font-mono text-[10px] text-acc-red-fg">读取失败</span>}
-            </span>
-            <span className="truncate text-right font-mono text-[11.5px] text-muted">
-              {e.type === "dir" ? "—" : `${e.left ? formatBytes(e.left.size) : "—"} · ${e.right ? formatBytes(e.right.size) : "—"}`}
-            </span>
-            <span className="truncate text-right font-mono text-[11.5px] text-faint">
-              {e.left ? formatDateTime(e.left.mtimeMs) : "—"}
-            </span>
-          </button>
-        ))}
-        <div className="px-5 py-2 font-mono text-[10.5px] text-faint">共 {formatCount(totalVisible)} 条</div>
-      </div>
+      )}
     </div>
   );
-}
-
-function formatDateTime(ms: number): string {
-  if (!ms) return "—";
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }

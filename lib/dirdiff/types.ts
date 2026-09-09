@@ -117,3 +117,21 @@ export interface SyncResult extends SyncPlan {
   applied: SyncItem[];
   failed: SyncItem[];
 }
+
+export interface GitRef {
+  name: string;
+  type: "branch" | "tag";
+}
+
+export interface GitInfo {
+  isRepo: boolean;
+  /** Work-tree top-level directory. */
+  root?: string;
+  /** Current branch name, or null when HEAD is detached. */
+  branch?: string | null;
+  refs?: GitRef[];
+}
+
+export interface GitCheckoutResult {
+  branch: string | null;
+}

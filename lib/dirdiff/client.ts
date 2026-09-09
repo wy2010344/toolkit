@@ -3,6 +3,8 @@ import type {
   CompareResult,
   DiffGroup,
   FileContentsResponse,
+  GitCheckoutResult,
+  GitInfo,
   ProgressPayload,
   SyncPlan,
   SyncRequest,
@@ -81,4 +83,13 @@ export async function previewSync(req: SyncRequest): Promise<SyncPlan> {
 export async function executeSync(req: SyncRequest): Promise<SyncResult> {
   const { result } = await postJson<{ result: SyncResult }>("/api/dirdiff/sync", { ...req, dryRun: false });
   return result;
+}
+
+export async function gitStatus(path: string): Promise<GitInfo> {
+  const { info } = await postJson<{ info: GitInfo }>("/api/dirdiff/git", { action: "status", path });
+  return info;
+}
+
+export async function gitCheckout(path: string, ref: string): Promise<GitCheckoutResult> {
+  return postJson<GitCheckoutResult>("/api/dirdiff/git", { action: "checkout", path, ref });
 }
