@@ -201,12 +201,16 @@ export function Modal({
   onClose,
   title,
   wide,
+  fullscreen = false,
+  action,
   children,
 }: {
   open: boolean;
   onClose: () => void;
   title?: ReactNode;
   wide?: boolean;
+  fullscreen?: boolean;
+  action?: ReactNode;
   children: ReactNode;
 }) {
   useEffect(() => {
@@ -220,18 +224,24 @@ export function Modal({
 
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-8">
+    <div className={cn("fixed inset-0 z-50 flex items-center justify-center", !fullscreen && "p-4 sm:p-8")}>
       <div className="absolute inset-0 bg-ink/35 backdrop-blur-[2px]" onClick={onClose} aria-hidden />
       <div
         role="dialog"
         aria-modal="true"
         className={cn(
-          "relative flex max-h-[88vh] w-full flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-[0_32px_90px_-24px_rgba(0,0,0,0.45)]",
-          wide ? "max-w-5xl" : "max-w-2xl",
+          "relative flex flex-col overflow-hidden border border-line bg-surface",
+          fullscreen
+            ? "h-full w-full border-0"
+            : cn(
+                "max-h-[88vh] w-full rounded-xl shadow-[0_32px_90px_-24px_rgba(0,0,0,0.45)]",
+                wide ? "max-w-5xl" : "max-w-2xl",
+              ),
         )}
       >
         <header className="flex shrink-0 items-center gap-2 border-b border-line bg-canvas/60 px-4 py-2.5">
           <div className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">{title}</div>
+          {action}
           <IconButton label="关闭" onClick={onClose}>
             <X size={15} weight="bold" />
           </IconButton>

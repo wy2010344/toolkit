@@ -2,7 +2,9 @@
 
 import { useMemo } from "react";
 import { diffWordsWithSpace, structuredPatch } from "diff";
+import hljs from "highlight.js/lib/core";
 import { cn } from "@/components/ui";
+import { escapeHtml } from "@/lib/dirdiff/lang";
 
 interface InlinePart {
   text: string;
@@ -23,6 +25,7 @@ interface DiffRow {
 }
 
 const INLINE_LIMIT = 4000;
+const HL_LIMIT = 250_000;
 
 function inlineParts(oldText: string, newText: string): [InlinePart[], InlinePart[]] {
   if (oldText.length + newText.length > INLINE_LIMIT) {
@@ -102,14 +105,51 @@ function buildRows(oldText: string, newText: string): DiffRow[] {
   return rows;
 }
 
+/** Whole-file highlight → one escaped-HTML string per line, or null when skipped. */
+function highlightLines(text: string, language: string): string[] | null {
+  if (text.length > HL_LIMIT || !hljs.getLanguage(language)) return null;
+  try {
+    return hljs.highlight(text, { language }).value.split("\n");
+  } catch {
+    return null;
+  }
+}
+
+/** Highlight a single fragment (word-diff part) with the given language. */
+function highlightFragment(text: string, language: string): string {
+  try {
+    return hljs.highlight(text, { language }).value;
+  } catch {
+    return escapeHtml(text);
+  }
+}
+
+/** One inline part → wrapped escape/ highlight HTML, diff marks on added/removed. */
+function partHtml(part: InlinePart, language: string): string {
+  const core = language === "plaintext" ? escapeHtml(part.text) : highlightFragment(part.text, language);
+  if (part.added) return `<span class="dirdiff-ins rounded-[2px]">${core}</span>`;
+  if (part.removed) return `<span class="dirdiff-del rounded-[2px]">${core}</span>`;
+  return core;
+}
+
+/** Change row: word-level marks when present, otherwise whole-line highlight. */
+function changeHtml(parts: InlinePart[] | undefined, whole: string | undefined, language: string): string {
+  if (parts && parts.some((p) => p.added || p.removed)) {
+    return parts.map((p) => partHtml(p, language)).join("");
+  }
+  return whole ?? escapeHtml(parts?.map((p) => p.text).join("") ?? "");
+}
+
 function Cell({
   no,
+  html,
   text,
   parts,
   empty,
   noNewline,
 }: {
   no?: number;
+  html?: string;
   text?: string;
   parts?: InlinePart[];
   empty?: boolean;
@@ -122,16 +162,20 @@ function Cell({
         {no ?? ""}
       </span>
       <span className="min-w-0 flex-1 whitespace-pre-wrap break-words pl-2 leading-[1.7]">
-        {parts
-          ? parts.map((p, i) => (
-              <span
-                key={i}
-                className={cn(p.added && "dirdiff-ins", p.removed && "dirdiff-del", (p.added || p.removed) && "rounded-[2px]")}
-              >
-                {p.text}
-              </span>
-            ))
-          : text}
+        {html ? (
+          <span dangerouslySetInnerHTML={{ __html: html }} />
+        ) : parts ? (
+          parts.map((p, i) => (
+            <span
+              key={i}
+              className={cn(p.added && "dirdiff-ins", p.removed && "dirdiff-del", (p.added || p.removed) && "rounded-[2px]")}
+            >
+              {p.text}
+            </span>
+          ))
+        ) : (
+          text
+        )}
         {noNewline && <span className="ml-1 text-[10px] text-faint">⏎? 无末尾换行</span>}
       </span>
     </div>
@@ -143,14 +187,27 @@ export function DiffView({
   rightName,
   leftText,
   rightText,
+  language,
 }: {
   leftName: string;
   rightName: string;
   leftText: string;
   rightText: string;
+  language: string;
 }) {
   const rows = useMemo(() => buildRows(leftText, rightText), [leftText, rightText]);
   const changeCount = rows.filter((r) => r.type !== "equal").length;
+
+  const lines = useMemo(
+    () => ({
+      left: highlightLines(leftText, language),
+      right: highlightLines(rightText, language),
+    }),
+    [leftText, rightText, language],
+  );
+
+  let leftIdx = 0;
+  let rightIdx = 0;
 
   return (
     <div className="flex h-full flex-col">
@@ -172,22 +229,43 @@ export function DiffView({
       <div className="min-h-0 flex-1 overflow-auto">
         <div className="grid min-w-full grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-px bg-line">
           {rows.map((row, i) => {
-            const leftTone = row.type === "change" || row.type === "left-only";
-            const rightTone = row.type === "change" || row.type === "right-only";
+            let leftHtml: string | undefined;
+            let rightHtml: string | undefined;
+            if (lines.left && row.leftText !== undefined) {
+              leftHtml =
+                row.type === "change"
+                  ? changeHtml(row.leftParts, lines.left[leftIdx], language)
+                  : lines.left[leftIdx];
+              leftIdx++;
+            }
+            if (lines.right && row.rightText !== undefined) {
+              rightHtml =
+                row.type === "change"
+                  ? changeHtml(row.rightParts, lines.right[rightIdx], language)
+                  : lines.right[rightIdx];
+              rightIdx++;
+            }
+
+            const leftBg =
+              row.type === "left-only" ? "dirdiff-del" : row.type === "change" ? "bg-acc-red-bg/55" : "bg-surface";
+            const rightBg =
+              row.type === "right-only" ? "dirdiff-ins" : row.type === "change" ? "bg-acc-green-bg/55" : "bg-surface";
             return (
               <div key={i} className="contents">
-                <div className={cn("bg-surface", leftTone && "bg-acc-red-bg/55")}>
+                <div className={cn(leftBg)}>
                   <Cell
                     no={row.leftNo}
+                    html={leftHtml}
                     text={row.leftText}
                     parts={row.leftParts}
                     empty={!row.leftText && row.type === "right-only"}
                     noNewline={row.noNewlineLeft}
                   />
                 </div>
-                <div className={cn("bg-surface", rightTone && "bg-acc-green-bg/55")}>
+                <div className={cn(rightBg)}>
                   <Cell
                     no={row.rightNo}
+                    html={rightHtml}
                     text={row.rightText}
                     parts={row.rightParts}
                     empty={!row.rightText && row.type === "left-only"}

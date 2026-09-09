@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Modal, Notice, Spinner, StatusBadge } from "@/components/ui";
+import { CornersIn, CornersOut } from "@phosphor-icons/react/dist/ssr";
+import { IconButton, Modal, Notice, Spinner, StatusBadge } from "@/components/ui";
 import { basename, formatBytes } from "@/lib/dirdiff/format";
+import { detectLanguage } from "@/lib/dirdiff/lang";
 import type { CompareEntry, FileContent, FileContentsResponse } from "@/lib/dirdiff/types";
 import { DiffView } from "./DiffView";
 
@@ -24,6 +26,7 @@ export function EntryDetail({
     data: null,
     error: null,
   });
+  const [fullscreen, setFullscreen] = useState(false);
 
   const requestKey = entry ? `${left}\n${right}\n${entry.rel}` : "";
 
@@ -106,6 +109,7 @@ export function EntryDetail({
           rightName={`${rightName}  ·  ${entry.rel}`}
           leftText={l.text}
           rightText={r.text}
+          language={detectLanguage(entry.rel)}
         />
       );
     }
@@ -150,7 +154,18 @@ export function EntryDetail({
   };
 
   return (
-    <Modal open={open} onClose={onClose} wide title={<span className="font-mono">{entry.rel}</span>}>
+    <Modal
+      open={open}
+      onClose={onClose}
+      wide
+      fullscreen={fullscreen}
+      action={
+        <IconButton label={fullscreen ? "退出全屏" : "全屏显示"} onClick={() => setFullscreen((v) => !v)}>
+          {fullscreen ? <CornersIn size={15} weight="bold" /> : <CornersOut size={15} weight="bold" />}
+        </IconButton>
+      }
+      title={<span className="font-mono">{entry.rel}</span>}
+    >
       <div className="flex items-center gap-2 border-b border-line px-4 py-2">
         <StatusBadge status={entry.status} />
         {entry.type === "file" && (
