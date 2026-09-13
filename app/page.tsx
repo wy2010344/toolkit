@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { GitDiff } from "@phosphor-icons/react/dist/ssr";
+import { GitDiff, Atom } from "@phosphor-icons/react/dist/ssr";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -7,6 +7,12 @@ export const metadata: Metadata = {
 };
 
 const TOOLS = [
+  {
+    href: "/tools/llm-lab",
+    name: "LLM 实验室",
+    desc: "从零手写一个微型 LLM,8 节课带你走完分词到生成的完整原理,全部代码可读、可改、可跑。",
+    icon: <Atom size={22} />,
+  },
   {
     href: "/tools/dir-diff",
     name: "目录对比同步",
