@@ -3,10 +3,11 @@
  */
 "use client";
 
-import { Books } from "@phosphor-icons/react/dist/ssr";
+import { Books, MapTrifold } from "@phosphor-icons/react/dist/ssr";
 import { cn } from "@/components/ui";
 
 export const LESSONS = [
+  { id: 0, title: "架构总览", sub: "交互式解剖图 · 逐个击破" },
   { id: 1, title: "文本如何变成数字", sub: "分词器 Tokenizer" },
   { id: 2, title: "把词变成向量", sub: "嵌入 Embedding" },
   { id: 3, title: "让模型分清先后", sub: "旋转位置编码 RoPE" },
@@ -30,7 +31,7 @@ export function LessonSidebar({
         <Books size={16} weight="fill" className="text-acc-blue-fg" />
         <div>
           <div className="text-[12px] font-semibold text-ink">LLM 入门路线</div>
-          <div className="text-[10px] text-faint">8 课时,由零到一</div>
+          <div className="text-[10px] text-faint">总览 + 8 课时,由零到一</div>
         </div>
       </div>
       <nav className="flex-1 overflow-auto p-2">
@@ -51,7 +52,11 @@ export function LessonSidebar({
                   activeSel ? "bg-white/15 text-white" : "bg-surface-mute text-muted",
                 )}
               >
-                {l.id}
+                {l.id === 0 ? (
+                  <MapTrifold size={12} weight="fill" className={activeSel ? "text-white" : "text-muted"} />
+                ) : (
+                  l.id
+                )}
               </span>
               <span className="min-w-0">
                 <span className="block truncate text-[12.5px] font-medium">{l.title}</span>

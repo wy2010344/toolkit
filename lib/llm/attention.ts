@@ -138,6 +138,7 @@ export function mergeHeads(heads: Mat[][], cfg: LLMConfig): Mat[] {
  * @param rope      预计算好的 RoPE 缓存
  * @param cfg       模型配置
  * @param causalMask 是否使用因果掩码(训练/生成用 true,课程演示可关掉)
+ * @param applyRoPE 是否施加旋转位置编码(架构总览实验台可关掉看对比)
  * @returns 结果与每个头的权重矩阵(供可视化)
  */
 export interface MultiHeadResult {
@@ -155,6 +156,7 @@ export function multiHeadAttention(
   rope: ReturnType<typeof precomputeRope>,
   cfg: LLMConfig,
   causalMask = true,
+  applyRoPE = true,
 ): MultiHeadResult {
   const headDim = cfg.dModel / cfg.nHeads;
   const T = x.length;
@@ -164,8 +166,8 @@ export function multiHeadAttention(
   const kd = linearSeq(x, wk, undefined, cfg.dModel, cfg.dModel);
   const vd = linearSeq(x, wv, undefined, cfg.dModel, cfg.dModel);
 
-  // ② 对 Q 和 K 施加 RoPE(带上位置信息)。
-  for (let pos = 0; pos < T; pos++) applyRopeInPlace([qd[pos]!, kd[pos]!], pos, rope);
+  // ② 对 Q 和 K 施加 RoPE(带上位置信息);架构实验台可旁路。
+  if (applyRoPE) for (let pos = 0; pos < T; pos++) applyRopeInPlace([qd[pos]!, kd[pos]!], pos, rope);
 
   // ③ 分头 + 每个头独立注意力。
   const qHeads = splitHeads(qd, cfg);

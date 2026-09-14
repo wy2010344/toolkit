@@ -49,3 +49,28 @@ export function rmsNormSeq(x: Mat[], weight: Mat): Mat[] {
 export function createNormWeight(dModel: number): Mat {
   return new Float32Array(dModel).fill(1);
 }
+
+/**
+ * 经典 LayerNorm:先减均值、再除标准差(把向量"居中并拉到单位尺度")。
+ * 与 RMSNorm 的差别:多了均值对齐这一步,代价是多一次全量求和。
+ * 架构总览里可以与 RMSNorm 切换,直观对比两种归一化的差异。
+ */
+export function layerNormVector(x: Mat, gamma: Mat): Mat {
+  let mean = 0;
+  for (let i = 0; i < x.length; i++) mean += x[i]!;
+  mean /= x.length;
+  let variance = 0;
+  for (let i = 0; i < x.length; i++) {
+    const diff = x[i]! - mean;
+    variance += diff * diff;
+  }
+  const std = Math.sqrt(variance / x.length + 1e-6);
+  const out = new Float32Array(x.length);
+  for (let i = 0; i < x.length; i++) out[i] = ((x[i]! - mean) / std) * gamma[i]!;
+  return out;
+}
+
+/** 对序列逐位置做 LayerNorm。 */
+export function layerNormSeq(x: Mat[], gamma: Mat): Mat[] {
+  return x.map((v) => layerNormVector(v, gamma));
+}

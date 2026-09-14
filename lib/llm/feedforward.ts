@@ -28,6 +28,16 @@ export function swish(x: number): number {
   return x / (1 + Math.exp(-x));
 }
 
+/** GELU 激活函数(高斯误差线性单元):ReLU 的另一个平滑近似,倒桶状不上限。 */
+export function gelu(x: number): number {
+  return 0.5 * x * (1 + Math.tanh(Math.sqrt(2 / Math.PI) * (x + 0.044715 * x * x * x)));
+}
+
+/** ReLU 激活函数:负输入直接截断为 0。 */
+export function relu(x: number): number {
+  return x > 0 ? x : 0;
+}
+
 /**
  * SwiGLU 前馈层(对序列的每个位置做)。
  *
