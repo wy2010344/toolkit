@@ -3,11 +3,12 @@
  */
 "use client";
 
-import { Books, MapTrifold } from "@phosphor-icons/react/dist/ssr";
+import { BookmarkSimple, Books, MapTrifold } from "@phosphor-icons/react/dist/ssr";
 import { cn } from "@/components/ui";
 
 export const LESSONS = [
   { id: 0, title: "架构总览", sub: "交互式解剖图 · 逐个击破" },
+  { id: -1, title: "术语表", sub: "专业术语的人话版" },
   { id: 1, title: "文本如何变成数字", sub: "分词器 Tokenizer" },
   { id: 2, title: "把词变成向量", sub: "嵌入 Embedding" },
   { id: 3, title: "让模型分清先后", sub: "旋转位置编码 RoPE" },
@@ -52,7 +53,9 @@ export function LessonSidebar({
                   activeSel ? "bg-white/15 text-white" : "bg-surface-mute text-muted",
                 )}
               >
-                {l.id === 0 ? (
+                {l.id === -1 ? (
+                  <BookmarkSimple size={12} weight="fill" className={activeSel ? "text-white" : "text-muted"} />
+                ) : l.id === 0 ? (
                   <MapTrifold size={12} weight="fill" className={activeSel ? "text-white" : "text-muted"} />
                 ) : (
                   l.id

@@ -6,6 +6,7 @@
 
 import { useMemo, useState } from "react";
 import { CodeBlock, DemoTray, Formula, LessonShell, P, Question, Step } from "../LessonLayout";
+import { ProblemStrip } from "../ProblemStrip";
 import { MICRO_CONFIG } from "@/lib/llm/config";
 
 const CODE = `// RoPE:对 dModel 维向量按"二维平面"逐个旋转
@@ -29,6 +30,11 @@ export function LlmLesson3() {
       title="让模型分清先后:旋转位置编码"
       lead="注意力天然“不认先后”:“猫追狗”和“狗追猫”对它没有区别。必须把位置信息注入向量。现代 LLM 的主流答案是 RoPE。"
     >
+      <ProblemStrip
+        problem="机器看完一句话得知道谁先谁后——「狗咬猫」和「猫咬狗」意思正好相反。"
+        obstacle="下一课的注意力只算「内容像不像」,天生分不清先后:位置信息压根不在它眼里。"
+        solve="给每个位置发一个「旋转角」,把先后顺势夹进相似度打分——位置差越大,打分越受罚。术语「RoPE」现在只用理解成「拧角度」即可。"
+      />
       <Step n={1} title="注意力认识不到顺序">
         <P>
           “我喜欢猫”和“猫喜欢我”——如果把两者都交给注意力网络,同一组词,仅仅换了顺序,信息完全不同,

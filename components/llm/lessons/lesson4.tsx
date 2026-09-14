@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 import { DiceFive } from "@phosphor-icons/react/dist/ssr";
 import { Button, Toggle, cn } from "@/components/ui";
 import { CodeBlock, DemoTray, Formula, LessonShell, P, Question, Step } from "../LessonLayout";
+import { ProblemStrip } from "../ProblemStrip";
 import { AttentionHeatmap } from "../AttentionHeatmap";
 import { MICRO_CONFIG } from "@/lib/llm/config";
 import { createWeights, forward } from "@/lib/llm/model";
@@ -32,6 +33,11 @@ export function LlmLesson4() {
       title="让每个 token 学会“该关注谁”"
       lead="Transformer 的全部魔力都在这一步:让每个 token 学会“该关注上文的哪几个位置”。这节课用真实运行的微型模型展示它。"
     >
+      <ProblemStrip
+        problem="每个词要明白自己在整句里的意思(「他」指谁?「苹果」在哪个语境),得先「看到」别的词。"
+        obstacle="词与词之间该建立多强的联系,没法一个个写死——联系应该由内容自己决定。"
+        solve="注意力:每个词亮出「我想找啥」,对全句的「钥匙」打分,再照相关度取内容。像查字典,机器自己读完一整句。Q/K/V、点积、因果掩码这些名字都服务于这一件事。"
+      />
       <Step n={1} title="核心:一句话版">
         <P>
           你在图书馆藏室里问:“有哪本书记得秦始皇?”(Q) —— 每本书背面都贴着“主题标签”(K);

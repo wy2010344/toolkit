@@ -12,7 +12,7 @@
 "use client";
 
 import { useMemo, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowRight, CaretDown, MapTrifold, SlidersHorizontal } from "@phosphor-icons/react/dist/ssr";
+import { ArrowDown, ArrowRight, BookmarkSimple, CaretDown, MapTrifold, SlidersHorizontal } from "@phosphor-icons/react/dist/ssr";
 import { cn } from "@/components/ui";
 import { TRAIN_CONFIG, type LLMConfig } from "@/lib/llm/config";
 import { CN_CORPUS } from "@/lib/llm/data";
@@ -264,11 +264,25 @@ export function ArchitectureMap({ onGoLesson }: { onGoLesson: (n: number) => voi
 
   return (
     <div className="mx-auto w-full max-w-4xl px-6 py-8">
-      <p className="font-mono text-[11px] uppercase tracking-widest text-acc-yellow-fg">architecture · 交互式解剖图</p>
-      <h1 className="mt-1 text-xl font-semibold tracking-tight text-ink">把整个 LLM 拆开看</h1>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="font-mono text-[11px] uppercase tracking-widest text-acc-yellow-fg">architecture · 交互式解剖图</p>
+          <h1 className="mt-1 text-xl font-semibold tracking-tight text-ink">造一个会接话的机器</h1>
+        </div>
+        <button
+          type="button"
+          onClick={() => onGoLesson(-1)}
+          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-[11.5px] font-medium text-ink transition-colors hover:border-line-strong"
+        >
+          <BookmarkSimple size={13} weight="fill" className="text-acc-yellow-fg" />
+          术语表
+        </button>
+      </div>
       <p className="mt-2 text-[13.5px] leading-relaxed text-muted">
-        点开任意模块:它是什么、为什么非有不可,以及对应的代码与课程。下面这条竖向管道是一条真实的
-        前向传播——顶部工具栏每个旋钮都是一次「如果不这样,会怎样?」的实验,改完立刻重算。
+        一句话需求:让电脑像会聊天的人一样「接话」。可惜它只懂数字,于是每一步都会被逼出难题:得先识字(①②)、
+        懂先后(③)、会联系上下文(④⑤)、撑得住叠得深(⑥),最后把「下一个词的概率」变成一句完整的话(⑦⑧)。
+        <strong className="text-ink-soft">需求卡出难题,难题造出模块</strong>——这张图就是你要逐个击破的地图。
+        先全局看懂 8 步,细节进课程,术语去术语表。
       </p>
 
       {/* ---- 可插拔实验台 ---- */}
@@ -378,8 +392,8 @@ export function ArchitectureMap({ onGoLesson }: { onGoLesson: (n: number) => voi
       </div>
 
       <p className="mt-6 text-[11.5px] leading-relaxed text-faint">
-        想动手验证?点每个节点右上角的「去第 X 课」,进入对应课程的完整讲解与实验。所有替换/旁路都在
-        浏览器里实时重算,不会污染训练用的标准引擎。
+        想动手验证?点节点右上角的「去第 X 课」,进入对应课程的完整讲解与实验;感觉术语太多,随时去侧边栏的
+        「术语表」查人话解释。所有替换/旁路都在浏览器里实时重算,不会污染训练用的标准引擎。
       </p>
     </div>
   );

@@ -6,6 +6,7 @@
 
 import { useMemo, useState } from "react";
 import { CodeBlock, DemoTray, Formula, LessonShell, P, Question, Step } from "../LessonLayout";
+import { ProblemStrip } from "../ProblemStrip";
 import { TransformerDiagram } from "../TransformerDiagram";
 import { MICRO_CONFIG, TRAIN_CONFIG, type LLMConfig } from "@/lib/llm/config";
 import { createWeights, traceMagnitudes } from "@/lib/llm/model";
@@ -32,6 +33,11 @@ export function LlmLesson6() {
       title="Transformer 块"
       lead="注意力负责“横向交流”,前馈网负责“纵向思考”。一个块把两者用残差和预归一焊在一起,再往上堆 nLayers 层。"
     >
+      <ProblemStrip
+        problem="想让机器「想得深」,办法是把层叠很多——可一叠深,数值就爆炸、信号就传不动。"
+        obstacle="三块绊脚石:每层量级失控(数值滚雪球)、深层梯度消失(后面学不动)、全是线性变换(变不出花样)。"
+        solve="先归一化再算(治量级)、留一条残差直通(治梯度)、用门控激活给非线性(治表达)。「归一化 / 残差 / SwiGLU」就是这三味药的名字。"
+      />
       <Step n={1} title="残差连接:给梯度一条“高速公路”">
         <P>
           深网络训练难,难在梯度要穿透很多层。残差连接在每层输出上直接叠加原始输入:{" "}

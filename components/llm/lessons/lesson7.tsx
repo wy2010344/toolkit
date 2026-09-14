@@ -5,6 +5,7 @@
 "use client";
 
 import { CodeBlock, DemoTray, Formula, LessonShell, P, Question, Step } from "../LessonLayout";
+import { ProblemStrip } from "../ProblemStrip";
 import { TrainingPanel } from "../TrainingPanel";
 import { DEMO_CORPUS } from "@/lib/llm/data";
 
@@ -27,6 +28,11 @@ export function LlmLesson7() {
       title="训练:从混沌到有序"
       lead="之前的模型全是随机权重,输出毫无意义。这一节课把这些权重从随机数训练成能『续写中文』的小模型——这就是大模型训练的最小原型。"
     >
+      <ProblemStrip
+        problem="前几课全是参数,可它们从没被校准过——模型其实在「瞎猜」。怎么让它真的学会?答案只能一个:错了就改。"
+        obstacle="参数成百上千,没有说明书,人没法一个个手调;只能让模型自己从「答错」里找出每根旋钮该往哪拧。"
+        solve="反向传播:算出每个旋钮该往哪拧一点(梯度),一批一批地拧,从一开始满口胡话到能说人话。损失、学习率、AdamW 都是这套「错→改」流程里的零件。"
+      />
       <Step n={1} title="loss:错得有多离谱">
         <P>
           给模型一句“我喜欢苹果”,它的任务是用“我喜欢”预测“苹”。若正确答案的概率是 80%,

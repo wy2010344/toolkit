@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 import { DiceFive } from "@phosphor-icons/react/dist/ssr";
 import { Button, cn } from "@/components/ui";
 import { CodeBlock, DemoTray, Formula, LessonShell, P, Question, Step } from "../LessonLayout";
+import { ProblemStrip } from "../ProblemStrip";
 import { AttentionHeatmap } from "../AttentionHeatmap";
 import { MICRO_CONFIG } from "@/lib/llm/config";
 import { createWeights, forward } from "@/lib/llm/model";
@@ -32,6 +33,11 @@ export function LlmLesson5() {
       title="多头:让模型同时“关心”多种关系"
       lead="单个头只能捕捉一种“关系模式”。多头的灵感很朴素:既然一种不够,那就同时开几个独立的注意力,再让后续层决定用谁。"
     >
+      <ProblemStrip
+        problem="一句话里同时有主谓、动宾、指代……这些「关系」全都想看清楚,一只眼睛不够用。"
+        obstacle="所有关系挤在同一个低维向量里会互相干扰——看这个就看不清那个,一个头的天花板太矮。"
+        solve="拆成几个「头」,每个头独立盯一种关系,最后再合议汇总。术语「多头」此刻只意味着:几双眼睛同时看。"
+      />
       <Step n={1} title="为什么一个头不够">
         <P>
           “我喜欢苹果”里至少有——「喜欢」与「我」之间的主谓、与「苹果」之间的动宾;如果句子更长还会出现指代、并列、反义……

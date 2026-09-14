@@ -6,6 +6,7 @@
 
 import { useMemo, useState } from "react";
 import { CodeBlock, DemoTray, Formula, LessonShell, P, Question, Step } from "../LessonLayout";
+import { ProblemStrip } from "../ProblemStrip";
 import { MICRO_CONFIG } from "@/lib/llm/config";
 import { embedToken } from "@/lib/llm/embeddings";
 import { cn } from "@/components/ui";
@@ -28,6 +29,11 @@ export function LlmLesson2() {
       title="把词变成向量:嵌入"
       lead="token id 只是序号,没有含义。嵌入层把 id 变成高维向量,让『意思相近的词靠得更近』。语义从这里第一次以数学形式登场。"
     >
+      <ProblemStrip
+        problem="第 1 课只给了编号,可编号之间没有任何「意思」——模型看不出「苹果」和「香蕉」是同类的。"
+        obstacle="直接拿编号当数算(数字 7 加 1 得 8)会骗到模型;我们想要的是「能比较像不像」的表示。"
+        solve="查一张表:每个编号换一行数字向量,意思像的词靠训练把它们的向量摆得近。术语「嵌入 / 向量 / 维度」翻译过来就是:查表、一串数字、这串数字有多长。"
+      />
       <Step n={1} title="为什么不是 one-hot?">
         <P>
           最直觉的做法是 one-hot:每个词一个“独热”向量,第 i 位为 1、其余为 0。

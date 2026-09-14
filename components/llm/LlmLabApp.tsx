@@ -8,6 +8,7 @@ import { useState } from "react";
 import { LessonSidebar } from "./LessonSidebar";
 import { LESSON_COMPONENTS } from "./lessons";
 import { ArchitectureMap } from "./ArchitectureMap";
+import { GlossaryView } from "./GlossaryView";
 
 export function LlmLabApp() {
   const [active, setActive] = useState(0);
@@ -17,7 +18,9 @@ export function LlmLabApp() {
     <div className="flex min-h-0 flex-1 overflow-hidden bg-canvas">
       <LessonSidebar active={active} onSet={setActive} />
       <main className="min-w-0 flex-1 overflow-y-auto">
-        {active === 0 ? (
+        {active === -1 ? (
+          <GlossaryView key="glossary" />
+        ) : active === 0 ? (
           <ArchitectureMap key="arch" onGoLesson={(n) => setActive(n)} />
         ) : (
           <Active key={active} />

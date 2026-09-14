@@ -5,6 +5,7 @@
 "use client";
 
 import { CodeBlock, DemoTray, Formula, LessonShell, P, Question, Step } from "../LessonLayout";
+import { ProblemStrip } from "../ProblemStrip";
 import { GenerationPanel } from "../GenerationPanel";
 import { DEMO_CORPUS } from "@/lib/llm/data";
 
@@ -25,6 +26,11 @@ export function LlmLesson8() {
       title="生成:自回归采样"
       lead="LLM 没有“从头写一篇文章”的开关——它只会一件事:看着已有的字,估计下一个字是谁。所谓生成,就是把这个动作重复几百次。"
     >
+      <ProblemStrip
+        problem="模型掏了半天,交出的只是一份「下一个词的概率」。怎么把它变成一整句顺口的话?答案和织毛衣一样一针一针来。"
+        obstacle="直接总挑最可能的词会出现复读机;完全乱来又满嘴胡话。要在「稳妥」和「多样」之间找平衡。"
+        solve="采样器按策略挑词(贪心 / 温度 / Top-k),每挑一个就拼回去,再猜下一个,一句句「长」出来。温度、Top-k、自回归,都是这个织毛衣过程的开关。"
+      />
       <Step n={1} title="一次只猜一个:自回归">
         <P>
           你敲出“我喜欢”,模型内部做一次前向,得到“下一个 token”的概率分布:

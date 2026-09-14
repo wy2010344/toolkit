@@ -6,6 +6,7 @@
 
 import { useMemo, useState } from "react";
 import { CodeBlock, DemoTray, Formula, LessonShell, P, Question, Step } from "../LessonLayout";
+import { ProblemStrip } from "../ProblemStrip";
 import { trainTokenizer } from "@/lib/llm/tokenizer";
 import { DEMO_CORPUS } from "@/lib/llm/data";
 
@@ -28,6 +29,11 @@ export function LlmLesson1() {
       title="文本如何变成数字:分词器"
       lead="神经网络只认数字。所以任何 LLM 的第一站都是『分词器』——它把一段文字拆成一个个 token,并给每个 token 分配一个整数 id。这节课动手看两种主流做法:字符级和 BPE。"
     >
+      <ProblemStrip
+        problem="电脑只认数字,可人要写句子。怎么把一段话交给它?别急着找答案,先看它难在哪。"
+        obstacle="不能一字一字硬塞也不说明白:切法得统一、能复用,还得「粗细得当」——太粗记不住生词,太细学不出词义的组合。"
+        solve="分词器把句子切成一个个 token,每个 token 固定发一个编号。看起来机械,但可靠。词表、BPE 这些名字慢慢会出现在你眼前,不必现在记。"
+      />
       <Step n={1} title="为什么模型只认数字?">
         <P>
           神经网络本质上是一个数学函数:吃进一串数值、吐出一串数值。它既不懂“苹”这个汉字,也不懂英文单词——世界上的任何符号,在进入网络前都
