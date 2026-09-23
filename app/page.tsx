@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { GitDiff, Atom } from "@phosphor-icons/react/dist/ssr";
+import { GitDiff, Atom, FlowArrow } from "@phosphor-icons/react/dist/ssr";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -7,6 +7,12 @@ export const metadata: Metadata = {
 };
 
 const TOOLS = [
+  {
+    href: "/tools/loop-engineering",
+    name: "Loop Engineering 流程图",
+    desc: "人机闭环工程模型:澄清循环 + 拆分执行重试循环,源码即图,改 Mermaid 文本即时重绘。",
+    icon: <FlowArrow size={22} />,
+  },
   {
     href: "/tools/llm-lab",
     name: "LLM 实验室",
