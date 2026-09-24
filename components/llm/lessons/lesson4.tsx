@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 第 4 课:注意力从零开始 —— 缩放点积注意力。
  */
 "use client";
@@ -6,8 +6,8 @@
 import { useMemo, useState } from "react";
 import { DiceFive } from "@phosphor-icons/react/dist/ssr";
 import { Button, Toggle, cn } from "@/components/ui";
-import { CodeBlock, DemoTray, Formula, LessonShell, P, Question, Step } from "../LessonLayout";
-import { ProblemStrip } from "../ProblemStrip";
+import { CodeBlock, DemoTray, Formula, LessonShell, P, Question, Step } from "@/components/lesson/LessonLayout";
+import { ProblemStrip } from "@/components/lesson/ProblemStrip";
 import { AttentionHeatmap } from "../AttentionHeatmap";
 import { MICRO_CONFIG } from "@/lib/llm/config";
 import { createWeights, forward } from "@/lib/llm/model";

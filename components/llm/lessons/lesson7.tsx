@@ -4,8 +4,8 @@
  */
 "use client";
 
-import { CodeBlock, DemoTray, Formula, LessonShell, P, Question, Step } from "../LessonLayout";
-import { ProblemStrip } from "../ProblemStrip";
+import { CodeBlock, DemoTray, Formula, LessonShell, P, Question, Step } from "@/components/lesson/LessonLayout";
+import { ProblemStrip } from "@/components/lesson/ProblemStrip";
 import { TrainingPanel } from "../TrainingPanel";
 import { DEMO_CORPUS } from "@/lib/llm/data";
 

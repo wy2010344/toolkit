@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 第 5 课:多头注意力(Multi-Head Attention)。
  */
 "use client";
@@ -6,8 +6,8 @@
 import { useMemo, useState } from "react";
 import { DiceFive } from "@phosphor-icons/react/dist/ssr";
 import { Button, cn } from "@/components/ui";
-import { CodeBlock, DemoTray, Formula, LessonShell, P, Question, Step } from "../LessonLayout";
-import { ProblemStrip } from "../ProblemStrip";
+import { CodeBlock, DemoTray, Formula, LessonShell, P, Question, Step } from "@/components/lesson/LessonLayout";
+import { ProblemStrip } from "@/components/lesson/ProblemStrip";
 import { AttentionHeatmap } from "../AttentionHeatmap";
 import { MICRO_CONFIG } from "@/lib/llm/config";
 import { createWeights, forward } from "@/lib/llm/model";

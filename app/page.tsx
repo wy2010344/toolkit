@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { GitDiff, Atom, FlowArrow } from "@phosphor-icons/react/dist/ssr";
+import { GitDiff, Atom, FlowArrow, Waveform } from "@phosphor-icons/react/dist/ssr";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -24,6 +24,12 @@ const TOOLS = [
     name: "目录对比同步",
     desc: "逐文件哈希对比两个目录的内容差异,文本文件内联查看 diff,支持按方向同步。",
     icon: <GitDiff size={22} />,
+  },
+  {
+    href: "/tools/dft-lab",
+    name: "DFT 听音室",
+    desc: "不用背公式,用可跑的 TS 例程弄懂离散傅里叶变换:同声相应、异频相消。",
+    icon: <Waveform size={22} />,
   },
 ];
 

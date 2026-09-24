@@ -5,8 +5,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CodeBlock, DemoTray, Formula, LessonShell, P, Question, Step } from "../LessonLayout";
-import { ProblemStrip } from "../ProblemStrip";
+import { CodeBlock, DemoTray, Formula, LessonShell, P, Question, Step } from "@/components/lesson/LessonLayout";
+import { ProblemStrip } from "@/components/lesson/ProblemStrip";
 import { MICRO_CONFIG } from "@/lib/llm/config";
 import { embedToken } from "@/lib/llm/embeddings";
 import { cn } from "@/components/ui";

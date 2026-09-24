@@ -5,8 +5,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CodeBlock, DemoTray, Formula, LessonShell, P, Question, Step } from "../LessonLayout";
-import { ProblemStrip } from "../ProblemStrip";
+import { CodeBlock, DemoTray, Formula, LessonShell, P, Question, Step } from "@/components/lesson/LessonLayout";
+import { ProblemStrip } from "@/components/lesson/ProblemStrip";
 import { TransformerDiagram } from "../TransformerDiagram";
 import { MICRO_CONFIG, TRAIN_CONFIG, type LLMConfig } from "@/lib/llm/config";
 import { createWeights, traceMagnitudes } from "@/lib/llm/model";

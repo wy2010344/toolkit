@@ -10,7 +10,8 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## Project notes (toolkit)
 
-- 这是一个本地工具合集,当前仅有「目录对比同步」(`/tools/dir-diff`)。更多工具照 `app/tools/<name>` + `components/<name>/` 的既有模式新增。
+- 这是一个本地工具合集,当前有「目录对比同步」(`/tools/dir-diff`)、“LLM 实验室”(`/tools/llm-lab`)、流程图(`/tools/loop-engineering`)与「DFT 听音室」(`/tools/dft-lab`)。更多工具照 `app/tools/<name>` + `components/<name>/` 的既有模式新增。
+- 课程式教学模块复用 `components/lesson/`(LessonLayout.tsx 的 Shell/Step/DemoTray/CodeBlock/Formula/Question 与 ProblemStrip.tsx);纯算法逻辑放 `lib/<name>/` 并在客户端组件里 import。DFT 的教科书全部是“探针点积”(乘起来再求和),见 `lib/dft/dft.ts`;SVG 图表(波形/乘积柱/频谱)在 `components/dft/plot.tsx`。
 - 包管理器为 pnpm。Tailwind CSS 4(`@import "tailwindcss"` + `@theme inline`),设计 token 全部定义在 `app/globals.css` 顶部(ink/muted/faint/line/canvas/surface + acc-*,含暗色媒体查询),UI 一律用这些语义类,不写死颜色。
 - 客户端常用件在 `components/ui.tsx`(Button/IconButton/Toggle/Modal/Notice/StatusBadge/ProgressBar/Spinner 等);磷酸图标统一从 `@phosphor-icons/react/dist/ssr` 导入(客户端组件)。
 - 目录对比工具为 API 直连本机文件系统(非数据库);进度用 NDJSON 流式(`app/api/dirdiff/compare`),客户端在 `lib/dirdiff/client.ts` 里逐行解析。平台差异点:Windows/win32 路径前缀(\\?\ 与大小写不敏感)在 `lib/dirdiff/server/fsutils.ts` 与 `compare.ts`。
