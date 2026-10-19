@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { GitDiff, Atom, FlowArrow, Waveform } from "@phosphor-icons/react/dist/ssr";
+import { GitDiff, Atom, FlowArrow, Waveform, Thermometer } from "@phosphor-icons/react/dist/ssr";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -7,6 +7,12 @@ export const metadata: Metadata = {
 };
 
 const TOOLS = [
+  {
+    href: "/tools/climate",
+    name: "旅居气候对比",
+    desc: "对比昆明、玉溪、蒙自、普洱、永仁、重庆、深圳的 12 个月气温变化,每月最高/最低/平均温带图一览。",
+    icon: <Thermometer size={22} />,
+  },
   {
     href: "/tools/loop-engineering",
     name: "Loop Engineering 流程图",
