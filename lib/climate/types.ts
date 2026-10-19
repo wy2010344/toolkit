@@ -10,7 +10,15 @@ export type CityId =
   | "puer"
   | "yongren"
   | "chongqing"
-  | "shenzhen";
+  | "shenzhen"
+  | "qujing"
+  | "xingyi"
+  | "renhe"
+  | "lincang"
+  | "baoshan"
+  | "gejiu"
+  | "yuanyang"
+  | "lvchun";
 
 /** 单个自然月的气温均值(单位 ℃)。 */
 export interface MonthlyTemp {
