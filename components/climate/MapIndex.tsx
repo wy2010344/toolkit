@@ -8,7 +8,8 @@
  * 叠加层(配置驱动,新增图层只需往 OVERLAYS 里加一项):
  *   ① 行政区域边界 —— 阿里 DataV GeoAtlas,云南取到州市一级,川黔渝粤只取省界;
  *   ② 地形晕渲 —— Esri World Hillshade,半透明叠在任意底图上;
- *   ③ 等高线 —— 300 / 500 m 间隔,由 AWS Terrarium DEM 在本地用 marching squares 生成。
+ *   ③ 等高线 —— 300 / 500 / 1000 / 1500 / 2000 / 3000 m 间隔,由 AWS Terrarium DEM 在本地用
+ *      marching squares 生成;同时叠一层按高程分层设色的半透明填充,把两条等高线之间的区域涂成淡色块。
  *
  * 本组件由 ClimateApp 通过 next/dynamic(ssr: false) 加载,因为 Leaflet 依赖 window。
  */
@@ -19,7 +20,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { CityId } from "@/lib/climate/types";
 import { cn } from "@/components/ui";
-import { generateContours } from "@/lib/climate/contour";
+import { generateContours, generateElevationFill } from "@/lib/climate/contour";
 
 /** 地图上的一枚城市点位。 */
 export interface MapPoint {
@@ -100,10 +101,12 @@ const CONTOUR_STYLE: L.PathOptions = {
 };
 
 /** 等高线间隔(米):小间隔看局部起伏,大间隔看宏观地势。 */
-const CONTOUR_INTERVALS = [300, 500, 1000, 1500, 2000] as const;
+const CONTOUR_INTERVALS = [300, 500, 1000, 1500, 2000, 3000] as const;
 type ContourInterval = (typeof CONTOUR_INTERVALS)[number];
 /** 低于这个缩放级别 DEM 太粗,等高线没有意义。 */
 const CONTOUR_MIN_ZOOM = 8;
+/** 分层设色填充单独占一个 pane,压在所有叠加层之下,只盖住底图。 */
+const FILL_PANE = "elevFill";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 
@@ -191,6 +194,12 @@ export function MapIndex({
       attributionControl: true,
     });
     mapRef.current = map;
+
+    // 分层设色填充要压在行政边界与等高线之下(它们同属 overlayPane,z-index 400),
+    // 所以单开一个 350 的 pane,并关掉它的指针事件以免挡住下面对地图的拖拽。
+    const fillPane = map.createPane(FILL_PANE);
+    fillPane.style.zIndex = "350";
+    fillPane.style.pointerEvents = "none";
 
     const layers = {} as Record<BaseKey, L.TileLayer>;
     BASE_KEYS.forEach((k) => {
@@ -328,13 +337,27 @@ export function MapIndex({
       setContourState("loading");
       try {
         const b = map.getBounds();
-        const levels = await generateContours({
+        const view = {
           bounds: { north: b.getNorth(), south: b.getSouth(), east: b.getEast(), west: b.getWest() },
           zoom: Math.min(z, 12),
           interval: contourInterval,
-        });
+        };
+        // 等高线与分层设色共用一份 DEM 栅格,并行取回。
+        const [levels, fill] = await Promise.all([generateContours(view), generateElevationFill(view)]);
         if (cancelled) return;
         group.clearLayers();
+        if (fill) {
+          // 透明度已经烘进 PNG 的 alpha 通道,这里不再叠加 opacity。
+          // imageOverlay 在「投影后的像素空间」里线性拉伸,因此与同样来自 Mercator 栅格的等高线严格对齐。
+          L.imageOverlay(
+            fill.dataUrl,
+            [
+              [fill.bounds.south, fill.bounds.west],
+              [fill.bounds.north, fill.bounds.east],
+            ],
+            { pane: FILL_PANE, interactive: false },
+          ).addTo(group);
+        }
         levels.forEach((lv) => {
           // 每层合成一条 MultiPolyline(外层数组 = 多个线段),比逐段建 layer 少很多图层对象。
           // 直接用 L.polyline 而不走 GeoJSON:省去一次 [lon,lat] → [lat,lng] 的构造,类型也干净。
@@ -445,7 +468,8 @@ export function MapIndex({
           )}
 
           <p className="mt-2 text-[10px] leading-relaxed text-faint">
-            底图、边界与晕渲均为免 key 公开服务;等高线按当前视野由 DEM 现场生成,放大到 {CONTOUR_MIN_ZOOM} 级以上更准确。
+            底图、边界与晕渲均为免 key 公开服务;等高线按当前视野由 DEM 现场生成并同步叠加分层设色,放大到{" "}
+            {CONTOUR_MIN_ZOOM} 级以上更准确。
           </p>
         </div>
       </div>
