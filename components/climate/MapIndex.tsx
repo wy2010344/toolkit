@@ -1,18 +1,25 @@
 /**
  * 城市地图索引。
  *
- * 底图可在「街道 / 交通」「地形 / 等高线」「卫星影像」之间切换,均为免 key、免注册的公开瓦片;
- * 并可叠加行政区域边界:云南取到州市一级,川黔渝粤只取省界,数据来自阿里 DataV GeoAtlas。
+ * 底图(免 key 公开服务):
+ *   ① 街道 / 交通 —— OSM 德国镜像(官方 tile.openstreetmap.org 在本机网络不可达);
+ *   ② 地形 —— Esri World Terrain Base,只有高程着色与晕渲,没有路网标注;
+ *   ③ 卫星影像 —— Esri World Imagery。
+ * 叠加层(配置驱动,新增图层只需往 OVERLAYS 里加一项):
+ *   ① 行政区域边界 —— 阿里 DataV GeoAtlas,云南取到州市一级,川黔渝粤只取省界;
+ *   ② 地形晕渲 —— Esri World Hillshade,半透明叠在任意底图上;
+ *   ③ 等高线 —— 300 / 500 m 间隔,由 AWS Terrarium DEM 在本地用 marching squares 生成。
  *
  * 本组件由 ClimateApp 通过 next/dynamic(ssr: false) 加载,因为 Leaflet 依赖 window。
  */
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { CityId } from "@/lib/climate/types";
 import { cn } from "@/components/ui";
+import { generateContours } from "@/lib/climate/contour";
 
 /** 地图上的一枚城市点位。 */
 export interface MapPoint {
@@ -32,8 +39,7 @@ type BaseKey = "street" | "terrain" | "satellite";
 /**
  * 底图瓦片,均为免 key 公开服务。
  * 说明:OpenStreetMap 官方瓦片(tile.openstreetmap.org)与 Wikimedia、CartoCDN 在本机网络下不可达
- * (TCP 443 连接超时),故街道底图改用 OSM 德国镜像;地形与卫星底图取自 Esri 公开的
- * ArcGIS Online 服务(无需 key,直接可用),地形图自带晕渲、卫星为真彩色影像。
+ * (TCP 443 连接超时),故街道底图改用 OSM 德国镜像;地形与卫星取自 Esri 公开的 ArcGIS Online 服务。
  */
 const BASEMAPS: Record<BaseKey, { label: string; url: string; attr: string; maxZoom: number }> = {
   street: {
@@ -43,9 +49,9 @@ const BASEMAPS: Record<BaseKey, { label: string; url: string; attr: string; maxZ
     maxZoom: 19,
   },
   terrain: {
-    label: "地形 / 等高线",
-    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
-    attr: '地形底图 &copy; <a href="https://www.esri.com/">Esri</a> World Topo Map',
+    label: "地形(高程着色)",
+    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}",
+    attr: '地形底图 &copy; <a href="https://www.esri.com/">Esri</a> World Terrain Base',
     maxZoom: 19,
   },
   satellite: {
@@ -56,6 +62,18 @@ const BASEMAPS: Record<BaseKey, { label: string; url: string; attr: string; maxZ
   },
 };
 const BASE_KEYS = Object.keys(BASEMAPS) as BaseKey[];
+
+const HILLSHADE_URL =
+  "https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}";
+const HILLSHADE_ATTR = '晕渲 &copy; <a href="https://www.esri.com/">Esri</a> World Hillshade';
+
+/** 叠加层清单:key 同时用于状态开关与图层分组。 */
+type OverlayKey = "admin" | "hillshade" | "contour";
+const OVERLAYS: Array<{ key: OverlayKey; label: string }> = [
+  { key: "admin", label: "行政区域边界" },
+  { key: "hillshade", label: "地形晕渲" },
+  { key: "contour", label: "等高线" },
+];
 
 /** 行政区域边界数据源:云南用 _full 取到州市,其余省份只要省界。 */
 const ADMIN_FILES = [
@@ -73,6 +91,21 @@ const ADMIN_STYLE: L.PathOptions = {
   fillColor: "#5f7396",
   fillOpacity: 0.05,
 };
+
+const CONTOUR_STYLE: L.PathOptions = {
+  color: "#8a5a2b",
+  weight: 1,
+  opacity: 0.75,
+  interactive: false,
+};
+
+/** 等高线间隔(米)。 */
+const CONTOUR_INTERVALS = [300, 500] as const;
+type ContourInterval = (typeof CONTOUR_INTERVALS)[number];
+/** 低于这个缩放级别 DEM 太粗,等高线没有意义。 */
+const CONTOUR_MIN_ZOOM = 8;
+
+type LoadState = "idle" | "loading" | "ready" | "error";
 
 /** 用 divIcon 自绘圆点,避免 Leaflet 默认图标在打包后的路径问题。 */
 function markerIcon(color: string, selected: boolean) {
@@ -99,6 +132,24 @@ function popupHtml(p: MapPoint) {
   );
 }
 
+/** 叠加层前面的勾选框。 */
+function CheckBox({ on }: { on: boolean }) {
+  return (
+    <span
+      className={cn(
+        "flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border",
+        on ? "border-transparent bg-ink text-white" : "border-line-strong",
+      )}
+    >
+      {on && (
+        <svg viewBox="0 0 12 12" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth={2.2}>
+          <path d="M2.5 6.2l2.2 2.2 4.8-5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )}
+    </span>
+  );
+}
+
 export function MapIndex({
   points,
   selectedId,
@@ -112,12 +163,19 @@ export function MapIndex({
   const mapRef = useRef<L.Map | null>(null);
   const baseRef = useRef<Record<BaseKey, L.TileLayer> | null>(null);
   const markerRef = useRef<L.LayerGroup | null>(null);
-  const adminRef = useRef<L.LayerGroup | null>(null);
+  const overlayRef = useRef<Record<OverlayKey, L.LayerGroup> | null>(null);
+  const hillshadeRef = useRef<L.TileLayer | null>(null);
   const fittedRef = useRef(false);
 
   const [base, setBase] = useState<BaseKey>("street");
-  const [showAdmin, setShowAdmin] = useState(false);
-  const [adminState, setAdminState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [enabled, setEnabled] = useState<Record<OverlayKey, boolean>>({
+    admin: false,
+    hillshade: false,
+    contour: false,
+  });
+  const [adminState, setAdminState] = useState<LoadState>("idle");
+  const [contourInterval, setContourInterval] = useState<ContourInterval>(300);
+  const [contourState, setContourState] = useState<LoadState | "zoom">("idle");
 
   // ① 建图(只执行一次)
   useEffect(() => {
@@ -133,21 +191,33 @@ export function MapIndex({
       attributionControl: true,
     });
     mapRef.current = map;
+
     const layers = {} as Record<BaseKey, L.TileLayer>;
     BASE_KEYS.forEach((k) => {
       layers[k] = L.tileLayer(BASEMAPS[k].url, { attribution: BASEMAPS[k].attr, maxZoom: BASEMAPS[k].maxZoom });
     });
     baseRef.current = layers;
     layers.street.addTo(map);
+
     markerRef.current = L.layerGroup().addTo(map);
-    adminRef.current = L.layerGroup().addTo(map);
+    overlayRef.current = {
+      admin: L.layerGroup().addTo(map),
+      hillshade: L.layerGroup().addTo(map),
+      contour: L.layerGroup().addTo(map),
+    };
+    hillshadeRef.current = L.tileLayer(HILLSHADE_URL, {
+      attribution: HILLSHADE_ATTR,
+      opacity: 0.45,
+      maxZoom: 19,
+    });
 
     return () => {
       map.remove();
       mapRef.current = null;
       baseRef.current = null;
       markerRef.current = null;
-      adminRef.current = null;
+      overlayRef.current = null;
+      hillshadeRef.current = null;
     };
   }, []);
 
@@ -191,11 +261,11 @@ export function MapIndex({
     });
   }, [points, selectedId, onSelect]);
 
-  // ④ 行政区域(首次打开时才拉取,拉过就缓存)
+  // ④ 行政区域边界(首次打开时才拉取,拉过就缓存)
   useEffect(() => {
-    const group = adminRef.current;
+    const group = overlayRef.current?.admin;
     if (!group) return;
-    if (!showAdmin) {
+    if (!enabled.admin) {
       group.clearLayers();
       return;
     }
@@ -213,8 +283,8 @@ export function MapIndex({
             return (await res.json()) as Parameters<typeof L.geoJSON>[0];
           }),
         );
-        if (cancelled || !adminRef.current) return;
-        files.forEach((fc) => L.geoJSON(fc, { style: ADMIN_STYLE, interactive: false }).addTo(adminRef.current!));
+        if (cancelled || !overlayRef.current) return;
+        files.forEach((fc) => L.geoJSON(fc, { style: ADMIN_STYLE, interactive: false }).addTo(overlayRef.current!.admin));
         setAdminState("ready");
       } catch {
         if (!cancelled) setAdminState("error");
@@ -224,7 +294,98 @@ export function MapIndex({
     return () => {
       cancelled = true;
     };
-  }, [showAdmin]);
+  }, [enabled.admin]);
+
+  // ⑤ 地形晕渲(只是把同一份半透明瓦片叠上去,开关即挂载 / 卸载)
+  useEffect(() => {
+    const group = overlayRef.current?.hillshade;
+    const layer = hillshadeRef.current;
+    if (!group || !layer) return;
+    group.clearLayers();
+    if (enabled.hillshade) group.addLayer(layer);
+  }, [enabled.hillshade]);
+
+  // ⑥ 等高线(按当前视野现场生成,平移 / 缩放结束后重算)
+  useEffect(() => {
+    const map = mapRef.current;
+    const group = overlayRef.current?.contour;
+    if (!map || !group) return;
+    if (!enabled.contour) {
+      group.clearLayers();
+      return;
+    }
+
+    let cancelled = false;
+    let timer: number | undefined;
+
+    const run = async () => {
+      const z = Math.round(map.getZoom());
+      if (z < CONTOUR_MIN_ZOOM) {
+        group.clearLayers();
+        setContourState("zoom");
+        return;
+      }
+      setContourState("loading");
+      try {
+        const b = map.getBounds();
+        const levels = await generateContours({
+          bounds: { north: b.getNorth(), south: b.getSouth(), east: b.getEast(), west: b.getWest() },
+          zoom: Math.min(z, 12),
+          interval: contourInterval,
+        });
+        if (cancelled) return;
+        group.clearLayers();
+        levels.forEach((lv) => {
+          // 每层合成一条 MultiPolyline(外层数组 = 多个线段),比逐段建 layer 少很多图层对象。
+          // 直接用 L.polyline 而不走 GeoJSON:省去一次 [lon,lat] → [lat,lng] 的构造,类型也干净。
+          const parts = lv.lines.map((line) => line.map(([lon, lat]): [number, number] => [lat, lon]));
+          L.polyline(parts, CONTOUR_STYLE).addTo(group);
+        });
+        setContourState("ready");
+      } catch {
+        if (!cancelled) setContourState("error");
+      }
+    };
+
+    const onMoveEnd = () => {
+      if (timer) window.clearTimeout(timer);
+      timer = window.setTimeout(() => void run(), 400);
+    };
+
+    void run();
+    map.on("moveend zoomend", onMoveEnd);
+
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+      map.off("moveend zoomend", onMoveEnd);
+    };
+  }, [enabled.contour, contourInterval]);
+
+  /** 切换叠加层;等高线关掉时顺手把状态归位(在 effect 里同步 setState 会被 lint 拦)。 */
+  const toggleOverlay = (key: OverlayKey) => {
+    const next = !enabled[key];
+    setEnabled((s) => ({ ...s, [key]: next }));
+    if (key === "contour" && !next) setContourState("idle");
+  };
+
+  /** 叠加层右侧的状态提示。 */
+  const statusOf = (key: OverlayKey): ReactNode => {
+    const chip = (text: string, tone = "text-faint") => (
+      <span className={cn("ml-auto text-[10px]", tone)}>{text}</span>
+    );
+    if (key === "admin") {
+      if (adminState === "loading") return chip("加载中…");
+      if (adminState === "error") return chip("失败", "text-acc-orange-fg");
+    }
+    if (key === "contour") {
+      if (contourState === "loading") return chip("生成中…");
+      if (contourState === "zoom") return chip(`需放大到 ${CONTOUR_MIN_ZOOM} 级`, "text-acc-orange-fg");
+      if (contourState === "error") return chip("失败", "text-acc-orange-fg");
+      if (contourState === "ready") return chip(`${contourInterval} m`);
+    }
+    return null;
+  };
 
   return (
     <div className="relative h-full w-full">
@@ -249,30 +410,42 @@ export function MapIndex({
           </div>
 
           <div className="mt-3 text-[11px] font-medium text-ink">叠加</div>
-          <button
-            type="button"
-            onClick={() => setShowAdmin((v) => !v)}
-            className="mt-1.5 flex w-full items-center gap-2 rounded-[6px] px-1 py-1 text-left transition-colors hover:bg-surface-mute"
-          >
-            <span
-              className={cn(
-                "flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border",
-                showAdmin ? "border-transparent bg-ink text-white" : "border-line-strong",
-              )}
-            >
-              {showAdmin && (
-                <svg viewBox="0 0 12 12" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth={2.2}>
-                  <path d="M2.5 6.2l2.2 2.2 4.8-5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              )}
-            </span>
-            <span className="text-[12px] text-ink">行政区域边界</span>
-            {adminState === "loading" && <span className="ml-auto text-[10px] text-faint">加载中…</span>}
-            {adminState === "error" && <span className="ml-auto text-[10px] text-acc-orange-fg">失败</span>}
-          </button>
+          <div className="mt-1.5 flex flex-col gap-0.5">
+            {OVERLAYS.map((o) => (
+              <button
+                key={o.key}
+                type="button"
+                onClick={() => toggleOverlay(o.key)}
+                className="flex w-full items-center gap-2 rounded-[6px] px-1 py-1 text-left transition-colors hover:bg-surface-mute"
+              >
+                <CheckBox on={enabled[o.key]} />
+                <span className="text-[12px] text-ink">{o.label}</span>
+                {statusOf(o.key)}
+              </button>
+            ))}
+          </div>
+
+          {/* 等高线间隔只在图层打开时出现,不占常驻空间 */}
+          {enabled.contour && (
+            <div className="mt-1.5 flex items-center gap-1 pl-6">
+              {CONTOUR_INTERVALS.map((iv) => (
+                <button
+                  key={iv}
+                  type="button"
+                  onClick={() => setContourInterval(iv)}
+                  className={cn(
+                    "rounded-[4px] px-1.5 py-0.5 text-[10px] font-medium transition-colors",
+                    contourInterval === iv ? "bg-ink text-white" : "text-muted hover:bg-surface-mute hover:text-ink",
+                  )}
+                >
+                  {iv} m
+                </button>
+              ))}
+            </div>
+          )}
 
           <p className="mt-2 text-[10px] leading-relaxed text-faint">
-            底图与边界均为免 key 公开服务,地形底图自带晕渲;点击点位可在侧栏定位该城市。
+            底图、边界与晕渲均为免 key 公开服务;等高线按当前视野由 DEM 现场生成,放大到 {CONTOUR_MIN_ZOOM} 级以上更准确。
           </p>
         </div>
       </div>
