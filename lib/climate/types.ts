@@ -21,7 +21,19 @@ export type CityId =
   | "lvchun"
   | "honghe"
   | "mojiang"
-  | "yuanjiang";
+  | "yuanjiang"
+  | "dali"
+  | "tengchong"
+  | "chuxiong"
+  | "chengjiang"
+  | "jianshui"
+  | "shiping"
+  | "mile"
+  | "luxi"
+  | "weishan"
+  | "pingbian"
+  | "jingdong"
+  | "xichang";
 
 /** 单个自然月的气温均值(单位 ℃)。 */
 export interface MonthlyTemp {
