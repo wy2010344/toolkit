@@ -100,7 +100,7 @@ function frac(va: number, vb: number, level: number): number {
 /**
  * 生成指定视野内的等高线。
  * @param zoom 期望的等高线栅格级别(建议 9–12);瓦片数超限时会自动降级。
- * @param interval 等高线间隔(米),如 300 / 500。
+ * @param interval 等高线间隔(米),如 300 / 500 / 1000 / 1500 / 2000。
  */
 export async function generateContours(opts: {
   bounds: ContourBounds;

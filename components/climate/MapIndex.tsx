@@ -99,8 +99,8 @@ const CONTOUR_STYLE: L.PathOptions = {
   interactive: false,
 };
 
-/** 等高线间隔(米)。 */
-const CONTOUR_INTERVALS = [300, 500] as const;
+/** 等高线间隔(米):小间隔看局部起伏,大间隔看宏观地势。 */
+const CONTOUR_INTERVALS = [300, 500, 1000, 1500, 2000] as const;
 type ContourInterval = (typeof CONTOUR_INTERVALS)[number];
 /** 低于这个缩放级别 DEM 太粗,等高线没有意义。 */
 const CONTOUR_MIN_ZOOM = 8;
@@ -425,9 +425,9 @@ export function MapIndex({
             ))}
           </div>
 
-          {/* 等高线间隔只在图层打开时出现,不占常驻空间 */}
+          {/* 等高线间隔只在图层打开时出现,不占常驻空间;5 个选项会换行 */}
           {enabled.contour && (
-            <div className="mt-1.5 flex items-center gap-1 pl-6">
+            <div className="mt-1.5 flex flex-wrap items-center gap-1 pl-6">
               {CONTOUR_INTERVALS.map((iv) => (
                 <button
                   key={iv}
