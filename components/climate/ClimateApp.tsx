@@ -1,13 +1,15 @@
 /**
  * 旅居气候对比主界面。
- * 两种视图:
+ * 三种视图:
  *   ① 单城温度带 —— 选一座城市,看 12 个月最低温→最高温的色带与月均温折线;
- *   ② 多城折线对比 —— 勾选任意多座城市(可一个都不选),同屏叠折线,指标可切换最高 / 平均 / 最低温。
- * y 轴温度范围由全部城市一次性算出并固定,两种视图共用,切换时可直接横向对照。
+ *   ② 多城折线对比 —— 勾选任意多座城市(可一个都不选),同屏叠折线,指标可切换最高 / 平均 / 最低温;
+ *   ③ 地图索引 —— 在底图上定位全部城市,可切换底图并叠加行政区域边界。
+ * 温度带与折线的 y 轴范围由全部城市一次性算出并固定,两视图共用,切换时可直接横向对照。
  */
 "use client";
 
 import { useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { Check } from "@phosphor-icons/react/dist/ssr";
 import { CLIMATES, climateOf } from "@/lib/climate/cities";
 import { ARCHIVES, ARCHIVE_FIELDS } from "@/lib/climate/archive";
@@ -16,6 +18,13 @@ import type { CityId, MonthlyTemp } from "@/lib/climate/types";
 import { Toggle, cn } from "@/components/ui";
 import { TempBandChart } from "./TempBandChart";
 import { CompareChart, LINE_COLORS, type CompareSeries, type Metric } from "./CompareChart";
+import type { MapPoint } from "./MapIndex";
+
+/** 地图视图按需加载:Leaflet 依赖 window,不参与预渲染。 */
+const MapIndex = dynamic(() => import("./MapIndex").then((m) => m.MapIndex), {
+  ssr: false,
+  loading: () => <div className="flex h-full items-center justify-center text-[12px] text-faint">地图加载中…</div>,
+});
 
 /** 从全部城市数据推出统一的 y 轴范围(向外取整到 5 的倍数)。 */
 const DOMAIN: [number, number] = (() => {
@@ -25,7 +34,7 @@ const DOMAIN: [number, number] = (() => {
   return [lo, hi];
 })();
 
-type ViewMode = "band" | "compare";
+type ViewMode = "band" | "compare" | "map";
 
 /** 城市行里的小型月均温折线,使用同一个 y 轴范围,便于列表内快速比较。 */
 function Spark({ months, domain }: { months: MonthlyTemp[]; domain: [number, number] }) {
@@ -52,7 +61,7 @@ function Segmented<T extends string>({
   options: Array<{ v: T; label: string }>;
 }) {
   return (
-    <div className="inline-flex rounded-lg border border-line bg-surface-mute/60 p-0.5">
+    <div className="inline-flex flex-wrap rounded-lg border border-line bg-surface-mute/60 p-0.5">
       {options.map((o) => (
         <button
           key={o.v}
@@ -91,6 +100,23 @@ export function ClimateApp() {
   );
   const colorIndexOf = (id: CityId) => series.findIndex((s) => s.id === id);
 
+  // 地图点位:配色与折线视图一致,都按 CLIMATES 顺序取色。
+  const points: MapPoint[] = useMemo(
+    () =>
+      CLIMATES.map((c, i) => ({
+        id: c.id,
+        name: c.name,
+        region: c.region,
+        lat: c.lat,
+        lon: c.lon,
+        elevation: c.elevation,
+        janMean: c.months[0].mean,
+        julMean: c.months[6].mean,
+        color: LINE_COLORS[i % LINE_COLORS.length],
+      })),
+    [],
+  );
+
   const togglePick = (id: CityId) =>
     setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
 
@@ -119,20 +145,21 @@ export function ClimateApp() {
               value={view}
               onChange={setView}
               options={[
-                { v: "band", label: "单城温度带" },
-                { v: "compare", label: "折线对比" },
+                { v: "band", label: "单城" },
+                { v: "compare", label: "折线" },
+                { v: "map", label: "地图" },
               ]}
             />
           </div>
         </div>
         <nav className="flex-1 overflow-y-auto p-2">
           {CLIMATES.map((c) => {
-            const active = view === "band" ? c.id === selected : picked.includes(c.id);
+            const active = view === "compare" ? picked.includes(c.id) : c.id === selected;
             const ci = colorIndexOf(c.id);
             return (
               <button
                 key={c.id}
-                onClick={() => (view === "band" ? setSelected(c.id) : togglePick(c.id))}
+                onClick={() => (view === "compare" ? togglePick(c.id) : setSelected(c.id))}
                 className={cn(
                   "mb-1 flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors",
                   active ? "border-line-strong bg-canvas" : "border-transparent hover:bg-surface-mute",
@@ -168,7 +195,10 @@ export function ClimateApp() {
       </aside>
 
       {/* 右侧 */}
-      <main className="min-w-0 flex-1 overflow-y-auto">
+      <main className={cn("min-w-0 flex-1", view === "map" ? "overflow-hidden" : "overflow-y-auto")}>
+        {view === "map" ? (
+          <MapIndex points={points} selectedId={selected} onSelect={setSelected} />
+        ) : (
         <div className="mx-auto max-w-3xl px-5 py-6 sm:px-8">
           {view === "band" ? (
             <>
@@ -277,6 +307,7 @@ export function ClimateApp() {
             </>
           )}
         </div>
+        )}
       </main>
     </div>
   );
