@@ -34,6 +34,11 @@ export const LINE_COLORS = [
   "#7a6a2f",
   "#5a4a8a",
   "#2e7d6b",
+  "#5f7fbf",
+  "#bf7a2f",
+  "#7f4f7f",
+  "#4f6f8f",
+  "#8f6f2f",
 ];
 
 export type Metric = "max" | "mean" | "min";

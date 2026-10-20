@@ -113,7 +113,7 @@ export function ClimateApp() {
       <aside className="flex w-44 shrink-0 flex-col border-r border-line bg-surface sm:w-56">
         <div className="border-b border-line px-4 py-3">
           <h1 className="text-[13px] font-semibold text-ink">旅居气候对比</h1>
-          <p className="mt-0.5 text-[11px] text-faint">15 城 · 1995–2024 共 30 年逐月均值</p>
+          <p className="mt-0.5 text-[11px] text-faint">{CLIMATES.length} 城 · 1995–2024 共 30 年逐月均值</p>
           <div className="mt-2">
             <Segmented<ViewMode>
               value={view}

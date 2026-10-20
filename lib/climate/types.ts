@@ -18,7 +18,10 @@ export type CityId =
   | "baoshan"
   | "gejiu"
   | "yuanyang"
-  | "lvchun";
+  | "lvchun"
+  | "honghe"
+  | "mojiang"
+  | "yuanjiang";
 
 /** 单个自然月的气温均值(单位 ℃)。 */
 export interface MonthlyTemp {
