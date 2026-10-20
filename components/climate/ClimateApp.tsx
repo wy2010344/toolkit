@@ -10,6 +10,7 @@
 import { useMemo, useState } from "react";
 import { Check } from "@phosphor-icons/react/dist/ssr";
 import { CLIMATES, climateOf } from "@/lib/climate/cities";
+import { ARCHIVES, ARCHIVE_FIELDS } from "@/lib/climate/archive";
 import { computeStats } from "@/lib/climate/stats";
 import type { CityId, MonthlyTemp } from "@/lib/climate/types";
 import { Toggle, cn } from "@/components/ui";
@@ -99,7 +100,12 @@ export function ClimateApp() {
     { label: "最冷月", value: `${stats.coldest.m}月 ${stats.coldest.mean.toFixed(1)}°` },
     { label: "月均温极差", value: `${stats.annualRange.toFixed(1)}°` },
     { label: "平均昼夜温差", value: `${stats.diurnalRange.toFixed(1)}°` },
+    { label: "宜居月数", value: `${stats.livableMonths} 个月` },
+    { label: "避暑指数", value: `${stats.summerIndex.toFixed(1)}°` },
+    { label: "避寒指数", value: `${stats.winterIndex.toFixed(1)}°` },
   ];
+
+  const archive = ARCHIVES[city.id];
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden bg-canvas">
@@ -185,7 +191,7 @@ export function ClimateApp() {
                 <TempBandChart months={city.months} domain={DOMAIN} reference={refs} />
               </section>
 
-              <section className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
+              <section className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {chips.map((c) => (
                   <div key={c.label} className="rounded-lg border border-line bg-surface px-3 py-2">
                     <div className="text-[10.5px] text-faint">{c.label}</div>
@@ -193,6 +199,9 @@ export function ClimateApp() {
                   </div>
                 ))}
               </section>
+              <p className="mt-1.5 text-[10.5px] leading-relaxed text-faint">
+                宜居月数 = 月均温落在 15–25 ℃ 的月份数;避暑指数 = 6–8 月平均月均温(越低越凉);避寒指数 = 12、1、2 月平均月均温(越高越暖)。
+              </p>
 
               <section className="mt-4 overflow-hidden rounded-xl border border-line bg-surface">
                 <table className="w-full border-collapse text-[12px]">
@@ -217,6 +226,21 @@ export function ClimateApp() {
                     ))}
                   </tbody>
                 </table>
+              </section>
+
+              <section className="mt-4 overflow-hidden rounded-xl border border-line bg-surface p-4">
+                <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="text-[13px] font-medium text-ink">城市档案</span>
+                  <span className="text-[10.5px] text-faint">人工整理 · 可能滞后 · 仅供参考</span>
+                </div>
+                <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {ARCHIVE_FIELDS.map((f) => (
+                    <div key={f.key} className="rounded-lg border border-line bg-surface-mute/40 px-3 py-2">
+                      <dt className="text-[10.5px] text-faint">{f.label}</dt>
+                      <dd className="mt-0.5 text-[12px] leading-relaxed text-ink">{archive[f.key]}</dd>
+                    </div>
+                  ))}
+                </dl>
               </section>
 
               <p className="mt-4 text-[10.5px] leading-relaxed text-faint">
