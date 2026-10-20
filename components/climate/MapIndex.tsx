@@ -8,8 +8,9 @@
  * 叠加层(配置驱动,新增图层只需往 OVERLAYS 里加一项):
  *   ① 行政区域边界 —— 阿里 DataV GeoAtlas,云南取到州市一级,川黔渝粤只取省界;
  *   ② 地形晕渲 —— Esri World Hillshade,半透明叠在任意底图上;
- *   ③ 等高线 —— 300 / 500 / 1000 / 1500 / 2000 / 3000 m 间隔,由 AWS Terrarium DEM 在本地用
- *      marching squares 生成;同时叠一层按高程分层设色的半透明填充,把两条等高线之间的区域涂成淡色块。
+ *   ③ 等高线 —— 300 / 500 / 1000 / 1500 / 2000 / 3000 m 间隔可多选,由 AWS Terrarium DEM 在本地用
+ *      marching squares 生成(间隔越大线越粗);同时叠一层按高程分层设色的半透明填充,
+ *      把两条等高线之间的区域涂成淡色块。
  *
  * 本组件由 ClimateApp 通过 next/dynamic(ssr: false) 加载,因为 Leaflet 依赖 window。
  */
@@ -100,7 +101,20 @@ const CONTOUR_STYLE: L.PathOptions = {
   interactive: false,
 };
 
-/** 等高线间隔(米):小间隔看局部起伏,大间隔看宏观地势。 */
+/**
+ * 各间隔的线型:间隔越大线越粗、越深,叠在一起也能看出是哪一档。
+ * 同一个高程值只归给能整除它的最大间隔(由 contour.ts 决定),因此不会重复画线。
+ */
+const CONTOUR_STYLES: Record<number, L.PathOptions> = {
+  300: { ...CONTOUR_STYLE, weight: 1, opacity: 0.5 },
+  500: { ...CONTOUR_STYLE, weight: 1, opacity: 0.6 },
+  1000: { ...CONTOUR_STYLE, weight: 1.4, opacity: 0.7 },
+  1500: { ...CONTOUR_STYLE, weight: 1.7, opacity: 0.75 },
+  2000: { ...CONTOUR_STYLE, weight: 2, opacity: 0.8 },
+  3000: { ...CONTOUR_STYLE, weight: 2.4, opacity: 0.85 },
+};
+
+/** 等高线间隔(米):小间隔看局部起伏,大间隔看宏观地势;可多选。 */
 const CONTOUR_INTERVALS = [300, 500, 1000, 1500, 2000, 3000] as const;
 type ContourInterval = (typeof CONTOUR_INTERVALS)[number];
 /** 低于这个缩放级别 DEM 太粗,等高线没有意义。 */
@@ -177,7 +191,7 @@ export function MapIndex({
     contour: false,
   });
   const [adminState, setAdminState] = useState<LoadState>("idle");
-  const [contourInterval, setContourInterval] = useState<ContourInterval>(300);
+  const [contourIntervals, setContourIntervals] = useState<ContourInterval[]>([300]);
   const [contourState, setContourState] = useState<LoadState | "zoom">("idle");
 
   // ① 建图(只执行一次)
@@ -340,10 +354,13 @@ export function MapIndex({
         const view = {
           bounds: { north: b.getNorth(), south: b.getSouth(), east: b.getEast(), west: b.getWest() },
           zoom: Math.min(z, 12),
-          interval: contourInterval,
         };
-        // 等高线与分层设色共用一份 DEM 栅格,并行取回。
-        const [levels, fill] = await Promise.all([generateContours(view), generateElevationFill(view)]);
+        // 等高线与分层设色共用一份 DEM 栅格,并行取回;设色按选中最细的那档分色,
+        // 因此色块的边界始终与最细的一圈线重合。
+        const [levels, fill] = await Promise.all([
+          generateContours({ ...view, intervals: contourIntervals }),
+          generateElevationFill({ ...view, interval: Math.min(...contourIntervals) }),
+        ]);
         if (cancelled) return;
         group.clearLayers();
         if (fill) {
@@ -362,7 +379,7 @@ export function MapIndex({
           // 每层合成一条 MultiPolyline(外层数组 = 多个线段),比逐段建 layer 少很多图层对象。
           // 直接用 L.polyline 而不走 GeoJSON:省去一次 [lon,lat] → [lat,lng] 的构造,类型也干净。
           const parts = lv.lines.map((line) => line.map(([lon, lat]): [number, number] => [lat, lon]));
-          L.polyline(parts, CONTOUR_STYLE).addTo(group);
+          L.polyline(parts, CONTOUR_STYLES[lv.interval] ?? CONTOUR_STYLE).addTo(group);
         });
         setContourState("ready");
       } catch {
@@ -383,13 +400,25 @@ export function MapIndex({
       if (timer) window.clearTimeout(timer);
       map.off("moveend zoomend", onMoveEnd);
     };
-  }, [enabled.contour, contourInterval]);
+  }, [enabled.contour, contourIntervals]);
 
   /** 切换叠加层;等高线关掉时顺手把状态归位(在 effect 里同步 setState 会被 lint 拦)。 */
   const toggleOverlay = (key: OverlayKey) => {
     const next = !enabled[key];
     setEnabled((s) => ({ ...s, [key]: next }));
     if (key === "contour" && !next) setContourState("idle");
+  };
+
+  /**
+   * 切换某个等高线间隔(多选)。
+   * 至少保留一个:一个都不选就既没有线、也没有分层设色;新增的档位按由小到大重排,
+   * 让按钮高亮顺序与线宽顺序一致。
+   */
+  const toggleInterval = (iv: ContourInterval) => {
+    setContourIntervals((prev) => {
+      if (prev.includes(iv)) return prev.length > 1 ? prev.filter((v) => v !== iv) : prev;
+      return CONTOUR_INTERVALS.filter((v) => v === iv || prev.includes(v));
+    });
   };
 
   /** 叠加层右侧的状态提示。 */
@@ -405,7 +434,8 @@ export function MapIndex({
       if (contourState === "loading") return chip("生成中…");
       if (contourState === "zoom") return chip(`需放大到 ${CONTOUR_MIN_ZOOM} 级`, "text-acc-orange-fg");
       if (contourState === "error") return chip("失败", "text-acc-orange-fg");
-      if (contourState === "ready") return chip(`${contourInterval} m`);
+      if (contourState === "ready")
+        return chip(contourIntervals.length === 1 ? `${contourIntervals[0]} m` : `${contourIntervals.length} 档`);
     }
     return null;
   };
@@ -448,17 +478,19 @@ export function MapIndex({
             ))}
           </div>
 
-          {/* 等高线间隔只在图层打开时出现,不占常驻空间;5 个选项会换行 */}
+          {/* 等高线间隔只在图层打开时出现,不占常驻空间;可多选,6 个选项会自动换行 */}
           {enabled.contour && (
             <div className="mt-1.5 flex flex-wrap items-center gap-1 pl-6">
               {CONTOUR_INTERVALS.map((iv) => (
                 <button
                   key={iv}
                   type="button"
-                  onClick={() => setContourInterval(iv)}
+                  onClick={() => toggleInterval(iv)}
                   className={cn(
                     "rounded-[4px] px-1.5 py-0.5 text-[10px] font-medium transition-colors",
-                    contourInterval === iv ? "bg-ink text-white" : "text-muted hover:bg-surface-mute hover:text-ink",
+                    contourIntervals.includes(iv)
+                      ? "bg-ink text-white"
+                      : "text-muted hover:bg-surface-mute hover:text-ink",
                   )}
                 >
                   {iv} m
@@ -468,8 +500,8 @@ export function MapIndex({
           )}
 
           <p className="mt-2 text-[10px] leading-relaxed text-faint">
-            底图、边界与晕渲均为免 key 公开服务;等高线按当前视野由 DEM 现场生成并同步叠加分层设色,放大到{" "}
-            {CONTOUR_MIN_ZOOM} 级以上更准确。
+            底图、边界与晕渲均为免 key 公开服务;等高线按当前视野由 DEM 现场生成,可多选(间隔越大线越粗),
+            设色按最细的那档分档,放大到 {CONTOUR_MIN_ZOOM} 级以上更准确。
           </p>
         </div>
       </div>

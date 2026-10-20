@@ -28,6 +28,8 @@ export interface ContourBounds {
 /** 一个高程档位对应的全部折线;每段折线是一串 [经度, 纬度]。 */
 export interface ContourLevel {
   level: number;
+  /** 该档位归属的间隔(米):取「能整除它的最大间隔」,用于按间隔区分线宽。 */
+  interval: number;
   lines: Array<Array<[number, number]>>;
 }
 
@@ -263,17 +265,28 @@ export async function generateElevationFill(opts: {
 /**
  * 生成指定视野内的等高线。
  * @param zoom 期望的等高线栅格级别(建议 9–12);瓦片数超限时会自动降级。
- * @param interval 等高线间隔(米),如 300 / 500 / 1000 / 1500 / 2000。
+ * @param intervals 等高线间隔(米)列表,可多选,如 [300, 1000, 3000]。
  */
 export async function generateContours(opts: {
   bounds: ContourBounds;
   zoom: number;
-  interval: number;
+  intervals: number[];
 }): Promise<ContourLevel[]> {
-  const { interval } = opts;
   const dem = await buildGrid(opts.bounds, opts.zoom);
   if (!dem) return [];
   const { grid, w, h, scale, xOrigin, yOrigin, min, max } = dem;
+
+  // 先给每个高程值定归属:由大到小依次认领,已被认领的不再重复。例如同时选 300 与 1000 时,
+  // 1000 / 2000 归 1000,300 / 600 归 300,这样一层只画一次线,再用线宽区分间隔。
+  const intervals = [...new Set(opts.intervals)].filter((v) => v > 0).sort((a, b) => b - a);
+  const owner = new Map<number, number>();
+  intervals.forEach((iv) => {
+    for (let lv = Math.max(Math.ceil(min / iv) * iv, iv); lv <= max; lv += iv) {
+      if (!owner.has(lv)) owner.set(lv, iv);
+    }
+  });
+  const levels = [...owner.entries()].sort((a, b) => a[0] - b[0]);
+  if (!levels.length) return [];
 
   // 预先算出每个小格的极值:只有跨过某条等值线的格子才需要参与计算,大幅省掉无用的遍历。
   const cw = w - 1;
@@ -291,14 +304,9 @@ export async function generateContours(opts: {
     }
   }
 
-  const levels: number[] = [];
-  for (let lv = Math.max(Math.ceil(min / interval) * interval, interval); lv <= max; lv += interval) {
-    levels.push(lv);
-  }
-
   const out: ContourLevel[] = [];
 
-  for (const level of levels) {
+  for (const [level, interval] of levels) {
     const segs: Array<Array<[number, number]>> = [];
     for (let j = 0; j < ch; j++) {
       for (let i = 0; i < cw; i++) {
@@ -365,6 +373,7 @@ export async function generateContours(opts: {
     if (segs.length) {
       out.push({
         level,
+        interval,
         lines: segs.map((seg) =>
           seg.map(([px, py]) => [lonOf(xOrigin + px, scale), latOf(yOrigin + py, scale)] as [number, number]),
         ),
