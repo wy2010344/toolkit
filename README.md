@@ -1,57 +1,60 @@
-# 工具箱
+# 工具箱 (toolkit)
 
-本地运行的小工具合集(Next.js 16 App Router + React 19 + Tailwind CSS 4)。
+手写的交互式小工具合集——不堆功能,每个工具都围绕一个原理或一个问题,打开浏览器就能玩。
 
-## 运行
+▶ **[在线体验](https://toolkit-flax.vercel.app)** ｜ [设计取舍](DESIGN.md)
+
+[![CI](https://github.com/wy2010344/toolkit/actions/workflows/ci.yml/badge.svg)](https://github.com/wy2010344/toolkit/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
+![LLM 实验室](docs/llm-lab.png)
+
+## 工具一览
+
+| 工具 | 做什么 | 技术看点 | 在线可玩 |
+| --- | --- | --- | --- |
+| [LLM 实验室](https://toolkit-flax.vercel.app/tools/llm-lab) | 8 节课从零手写一个微型 LLM,走完分词 → 注意力 → 训练 → 生成的完整原理 | 纯 TypeScript 真·梯度下降(loss 真实下降),注意力热力图、可插拔架构模块、术语表 | ✅ |
+| [DFT 听音室](https://toolkit-flax.vercel.app/tools/dft-lab) | 不背公式,用可跑的例程和声音理解离散傅里叶变换 | "探针点积"实现、波形 / 乘积柱 / 频谱联动 SVG、Web Audio 可听化 | ✅ |
+| [旅居气候对比](https://toolkit-flax.vercel.app/tools/climate) | 对比 30 座候选城市的逐月气温与体感指标 | 固定刻度温度带图、多城折线、山体阴影 + 等值线的地图视角 | ✅ |
+| [Loop Engineering 流程图](https://toolkit-flax.vercel.app/tools/loop-engineering) | 人机闭环工程模型的流程图 | 源码即图,改 Mermaid 文本即时重绘 | ✅ |
+| [目录对比同步](https://toolkit-flax.vercel.app/tools/dir-diff) | 逐文件哈希对比两个目录,diff 查看,按方向同步 | NDJSON 流式进度、size 短路 + 流式 SHA-1、dry-run 同步计划、git 分支切换 | ⚠️ 仅本地 |
+
+![旅居气候对比](docs/climate.png)
+
+![DFT 听音室](docs/dft-lab.png)
+
+## 本地运行
 
 ```bash
 pnpm install
 pnpm dev
 ```
 
-打开 http://localhost:3000。当前包含一个工具:
+打开 http://localhost:3000。
 
-### 目录对比同步 (`/tools/dir-diff`)
+- 除「目录对比同步」外,所有工具都是纯浏览器端实现,无需任何后端;
+- 「目录对比同步」需要访问本机文件系统与 git,在线部署时界面会明确提示,请本地使用。
 
-逐文件对比两个目录的内容,**不依赖 git**,按内容哈希(SHA-1)判定文件是否一致,适合本地大目录的增量核对与镜像。
+## 技术栈
 
-- **对比**:遍历两侧目录,先以 size 短路,再对大小相同的文件做流式哈希比对。进度以 NDJSON 流式实时上报(walk / hash 两阶段)。结果以 A / B 两棵目录树并排展示,可折叠子树,条目按差异着色(仅 A / 仅 B / 已修改 / 冲突)。
-- **git 分支切换**:若某侧路径是一个 git 仓库,路径栏下方会出现分支 / 标签选择器:可输入关键词筛选,按「分支 / 标签」分组,每项显示短提交号与最近提交时间,当前分支有勾选标记;选中即以 `git checkout` 切换到该引用(标签为分离 HEAD),切换后自动重新对比。检测为合法仓库时通过 `git -C <path>` 调用,不经过 shell,引用名做了白名单校验;分支 / 标签及提交信息用单次 `git for-each-ref` 拉取,选择器基于 `cmdk` 无头组件。
-- **忽略规则**:每行一个 gitignore 风格模式(基于 `ignore` 包),内置恒忽略 `.git`;支持 `!` 取反。可勾选「忽略隐藏文件」。
-- **仅对比文件(默认)**:勾选「忽略文件夹」后只对文件做内容对比,纯目录层面的差异(如单侧多出的空目录)不报告;取消勾选则同时报告单侧目录与文件/目录冲突。
-- **差异查看**:点击条目弹出模态框,文本文件做左右并排的内联 diff(含行内词级高亮,>2 MB 的文件跳过内联);单侧文件显示预览;冲突(一侧是文件一侧是目录)提示手动处理。
-- **同步**:选择方向(A→B 或 B→A),先「预览计划」——列出将复制 / 删除 / 跳过的条目与总字节数,确认后执行。执行结果实时回显,完成后自动重新对比。删除目标侧独有条目需显式勾选(即为镜像)。
-- **对比方案**:左右目录 + 忽略规则可存成本地方案(保存在 `data/dirdiff-groups.json`,仅本机可见,裁剪后不随仓库提交)。
+Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS 4 · cmdk · mermaid · leaflet · highlight.js
 
-**目录选择**:点击路径栏的「浏览」会调用系统原生目录选择器(Windows: WinForms;macOS: osascript;Linux: kdialog/zenity),也可以直接手填路径。
-
-## 架构
+## 结构速览
 
 ```
 app/
-  tools/dir-diff/page.tsx       工具页(挂载客户端应用)
-  api/dirdiff/
-    compare/route.ts            对比任务 · NDJSON 流式进度
-    contents/route.ts           单文件内容(文本 / 二进制 / 过大判定)
-    sync/route.ts               同步(含 dryRun 只出计划)
-    groups/route.ts             方案的增删改查
-    browse/route.ts             系统原生目录选择器
-    git/route.ts                git 仓库探测(status)与分支 / 标签切换(checkout)
-lib/dirdiff/
-  server/                       walk / ignore / compare / sync / groups / text / browse / fsutils
-  client.ts                     客户端 API 封装(含流式解析)
-  types.ts · format.ts          共享类型与格式化
-components/dirdiff/             DirDiffApp / GroupRail / SyncPanel / ResultPanes / EntryDetail / DiffView 等
-data/dirdiff-groups.json        保存的对比方案(运行时数据)
+  page.tsx                 工具入口
+  tools/<name>/page.tsx    各工具页
+  api/dirdiff/*            目录对比的本机文件 API(NDJSON 流式)
+components/
+  lesson/                  课程式教学壳(LessonLayout: Shell / Step / Formula / Question)
+  llm/ dft/ climate/ loop/ dirdiff/   各工具的客户端实现
+lib/
+  llm/ dft/ climate/       纯算法,与 UI 解耦,可独立通读
+  dirdiff/                 目录对比的共享类型与服务端实现(walk / hash / sync)
+DESIGN.md                  每个工具的关键设计取舍
 ```
 
-进程内多路并发有硬上限(哈希 16、同步 8),避免大目录对比时打挂机器。
+## License
 
-## 常用命令
-
-```bash
-pnpm dev        # 开发
-pnpm lint       # eslint
-pnpm build      # 生产构建(含 typecheck)
-pnpm start      # 生产运行
-```
+[MIT](LICENSE)

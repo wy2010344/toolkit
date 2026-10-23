@@ -23,6 +23,7 @@
 # misc
 .DS_Store
 *.pem
+.workbuddy/
 
 # local tool data (runtime-only, machine specific)
 /data/

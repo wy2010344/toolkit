@@ -27,7 +27,7 @@ export async function exists(p: string): Promise<boolean> {
 
 export async function statOrNull(p: string): Promise<fs.Stats | null> {
   try {
-    return await fs.promises.stat(toSafePath(p));
+    return await fs.promises.stat(/* turbopackIgnore: true */ toSafePath(p));
   } catch {
     return null;
   }
@@ -72,7 +72,7 @@ export async function copyFilePreservingMtime(src: string, dest: string): Promis
   const safeSrc = toSafePath(src);
   await fs.promises.mkdir(path.dirname(toSafePath(dest)), { recursive: true });
   await fs.promises.copyFile(safeSrc, toSafePath(dest));
-  const st = await fs.promises.stat(safeSrc);
+  const st = await fs.promises.stat(/* turbopackIgnore: true */ safeSrc);
   await fs.promises.utimes(toSafePath(dest), st.atime, st.mtime);
 }
 

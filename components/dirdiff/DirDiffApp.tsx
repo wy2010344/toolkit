@@ -47,7 +47,7 @@ function emptyDraft(): Draft {
   return { name: "", left: "", right: "", ignoreText: DEFAULT_IGNORE, includeHidden: false, includeEqual: false, ignoreDirs: true };
 }
 
-export function DirDiffApp() {
+export function DirDiffApp({ hosted = false }: { hosted?: boolean }) {
   const [groups, setGroups] = useState<DiffGroup[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
@@ -304,6 +304,15 @@ export function DirDiffApp() {
             </Button>
           </div>
         </header>
+
+        {hosted && (
+          <div className="px-5 pt-3">
+            <Notice tone="warn">
+              当前是在线演示版:目录对比需要读写<b>你本机</b>的文件系统并调用 git,云端环境无法提供。
+              请在本地克隆本仓库后运行 <code>pnpm dev</code> 体验完整功能;其余工具在线即可使用。
+            </Notice>
+          </div>
+        )}
 
         {/* config */}
         <section className="space-y-3 border-b border-line bg-surface px-5 py-4">
