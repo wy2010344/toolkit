@@ -33,7 +33,8 @@ export type CityId =
   | "weishan"
   | "pingbian"
   | "jingdong"
-  | "xichang";
+  | "xichang"
+  | "tonghai";
 
 /** 单个自然月的气温均值(单位 ℃)。 */
 export interface MonthlyTemp {

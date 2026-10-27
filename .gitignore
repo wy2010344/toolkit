@@ -24,9 +24,13 @@
 .DS_Store
 *.pem
 .workbuddy/
+.workbuddy-ai/
 
 # local tool data (runtime-only, machine specific)
 /data/
+
+# atlas build scratch/cache (reproducible via `pnpm build:atlas`)
+.tmp-atlas/
 
 # debug
 npm-debug.log*

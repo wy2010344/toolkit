@@ -1,9 +1,10 @@
 /**
  * 旅居气候对比主界面。
- * 三种视图:
- *   ① 单城温度带 —— 选一座城市,看 12 个月最低温→最高温的色带与月均温折线;
- *   ② 多城折线对比 —— 勾选任意多座城市(可一个都不选),同屏叠折线,指标可切换最高 / 平均 / 最低温;
- *   ③ 地图索引 —— 在底图上定位全部城市,可切换底图并叠加行政区域边界。
+ * 四种视图:
+ *   ① 地图图册 —— 默认视图。把「宜居度」画成云南全境的连续等值面,鼠标移到任意位置即可读数;
+ *   ② 单城温度带 —— 选一座城市,看 12 个月最低温→最高温的色带与月均温折线;
+ *   ③ 多城折线对比 —— 勾选任意多座城市(可一个都不选),同屏叠折线,指标可切换最高 / 平均 / 最低温;
+ *   ④ 推荐排行 —— 按偏好维度给全部城市排序,看选中城市的逐月舒适度日历。
  * 温度带与折线的 y 轴范围由全部城市一次性算出并固定,两视图共用,切换时可直接横向对照。
  */
 "use client";
@@ -14,11 +15,22 @@ import { Check } from "@phosphor-icons/react/dist/ssr";
 import { CLIMATES, climateOf } from "@/lib/climate/cities";
 import { ARCHIVES, ARCHIVE_FIELDS } from "@/lib/climate/archive";
 import { computeStats } from "@/lib/climate/stats";
+import { MONTHLY_ENV, ENV_PERIOD } from "@/lib/climate/env";
+import { MONTHLY_PM25, PM25_PERIOD } from "@/lib/climate/air";
+import { scoreOf, type DimKey } from "@/lib/climate/score";
 import type { CityId, MonthlyTemp } from "@/lib/climate/types";
 import { Toggle, cn } from "@/components/ui";
 import { TempBandChart } from "./TempBandChart";
+import { ComfortCalendar } from "./ComfortCalendar";
+import { RankView } from "./RankView";
 import { CompareChart, LINE_COLORS, type CompareSeries, type Metric } from "./CompareChart";
 import type { MapPoint } from "./MapIndex";
+
+/** 图册数据量较大(等值线是预生成的折线),按需加载,不拖慢首屏。 */
+const YunnanAtlas = dynamic(() => import("./YunnanAtlas").then((m) => m.YunnanAtlas), {
+  ssr: false,
+  loading: () => <div className="flex h-full items-center justify-center text-[12px] text-faint">图册加载中…</div>,
+});
 
 /** 地图视图按需加载:Leaflet 依赖 window,不参与预渲染。 */
 const MapIndex = dynamic(() => import("./MapIndex").then((m) => m.MapIndex), {
@@ -34,7 +46,7 @@ const DOMAIN: [number, number] = (() => {
   return [lo, hi];
 })();
 
-type ViewMode = "band" | "compare" | "map";
+type ViewMode = "band" | "compare" | "map" | "rank";
 
 /** 城市行里的小型月均温折线,使用同一个 y 轴范围,便于列表内快速比较。 */
 function Spark({ months, domain }: { months: MonthlyTemp[]; domain: [number, number] }) {
@@ -79,15 +91,64 @@ function Segmented<T extends string>({
   );
 }
 
+/** 单城逐月环境表:把舒适度模型的输入摊开,分数为什么高 / 低一眼可查。 */
+function EnvTable({ id }: { id: CityId }) {
+  const env = MONTHLY_ENV[id];
+  const pm = MONTHLY_PM25[id];
+  return (
+    <section className="mt-4 overflow-hidden rounded-xl border border-line bg-surface">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 px-3 pt-3">
+        <span className="text-[13px] font-medium text-ink">逐月环境</span>
+        <span className="text-[10.5px] text-faint">{ENV_PERIOD}</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-[12px]">
+          <thead>
+            <tr className="border-b border-line text-[10.5px] text-faint">
+              <th className="px-3 py-2 text-left font-medium">月份</th>
+              <th className="px-3 py-2 text-right font-medium">体感</th>
+              <th className="px-3 py-2 text-right font-medium">湿度</th>
+              <th className="px-3 py-2 text-right font-medium">降水</th>
+              <th className="px-3 py-2 text-right font-medium">雨日</th>
+              <th className="px-3 py-2 text-right font-medium">日照</th>
+              <th className="px-3 py-2 text-right font-medium">PM2.5</th>
+            </tr>
+          </thead>
+          <tbody className="font-mono">
+            {env.map((e, i) => (
+              <tr key={e.m} className="border-b border-line/60 last:border-0 hover:bg-surface-mute/60">
+                <td className="px-3 py-1.5 text-left font-sans text-muted">{e.m}月</td>
+                <td className="px-3 py-1.5 text-right text-ink">{e.feels.toFixed(1)}°</td>
+                <td className="px-3 py-1.5 text-right text-muted">{e.hum.toFixed(0)}%</td>
+                <td className="px-3 py-1.5 text-right text-muted">{e.precip.toFixed(0)} mm</td>
+                <td className="px-3 py-1.5 text-right text-muted">{e.rainDays.toFixed(1)} d</td>
+                <td className="px-3 py-1.5 text-right text-faint">{e.sun.toFixed(0)} h</td>
+                <td className="px-3 py-1.5 text-right text-faint">{pm[i].toFixed(1)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="px-3 pb-3 pt-2 text-[10.5px] leading-relaxed text-faint">
+        降水与日照已按年平均,即「平均每年该月的总量」;PM2.5 单位 μg/m³,{PM25_PERIOD}。气温表为 30 年口径,两表口径不同不可直接混算。
+      </p>
+    </section>
+  );
+}
+
 export function ClimateApp() {
-  const [view, setView] = useState<ViewMode>("band");
+  const [view, setView] = useState<ViewMode>("map");
+  const [mapMode, setMapMode] = useState<"atlas" | "online">("atlas");
   const [selected, setSelected] = useState<CityId>("kunming");
   const [picked, setPicked] = useState<CityId[]>(["kunming", "chongqing", "shenzhen"]);
   const [metric, setMetric] = useState<Metric>("mean");
   const [showRef, setShowRef] = useState(true);
+  /** 偏好维度:地图的「宜居」图层与推荐榜单共用,两边永远说同一件事。 */
+  const [dim, setDim] = useState<DimKey>("overall");
 
   const city = climateOf(selected);
   const stats = useMemo(() => computeStats(city.months), [city]);
+  const score = useMemo(() => scoreOf(selected), [selected]);
   const refs = useMemo(
     () => (showRef ? CLIMATES.filter((c) => c.id !== city.id).map((c) => c.months) : []),
     [city, showRef],
@@ -134,7 +195,7 @@ export function ClimateApp() {
   const archive = ARCHIVES[city.id];
 
   return (
-    <div className="flex min-h-0 flex-1 overflow-hidden bg-canvas">
+    <div className="flex h-dvh min-h-0 overflow-hidden bg-canvas">
       {/* 左侧:视图切换 + 城市列表 */}
       <aside className="flex w-44 shrink-0 flex-col border-r border-line bg-surface sm:w-56">
         <div className="border-b border-line px-4 py-3">
@@ -148,6 +209,7 @@ export function ClimateApp() {
                 { v: "band", label: "单城" },
                 { v: "compare", label: "折线" },
                 { v: "map", label: "地图" },
+                { v: "rank", label: "推荐" },
               ]}
             />
           </div>
@@ -196,8 +258,33 @@ export function ClimateApp() {
 
       {/* 右侧 */}
       <main className={cn("min-w-0 flex-1", view === "map" ? "overflow-hidden" : "overflow-y-auto")}>
-        {view === "map" ? (
-          <MapIndex points={points} selectedId={selected} onSelect={setSelected} />
+        {view === "rank" ? (
+          <RankView selected={selected} onSelect={setSelected} dim={dim} onDim={setDim} />
+        ) : view === "map" ? (
+          <div className="flex h-full min-h-0 flex-col">
+            <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-surface px-3 py-1.5">
+              <Segmented<"atlas" | "online">
+                value={mapMode}
+                onChange={setMapMode}
+                options={[
+                  { v: "atlas", label: "图册" },
+                  { v: "online", label: "在线地图" },
+                ]}
+              />
+              <span className="text-[10.5px] text-faint">
+                {mapMode === "atlas"
+                  ? "「宜居」层是连续的面:等值线之间是色带,鼠标移到任意位置可读出该点的分数与气温;再切气温 / 降水 / 人口 / 地震看成因"
+                  : "可缩放拖动的在线底图,叠加行政边界与等高线"}
+              </span>
+            </div>
+            <div className="relative min-h-0 flex-1">
+              {mapMode === "atlas" ? (
+                <YunnanAtlas points={points} selectedId={selected} onSelect={setSelected} dim={dim} onDim={setDim} />
+              ) : (
+                <MapIndex points={points} selectedId={selected} onSelect={setSelected} />
+              )}
+            </div>
+          </div>
         ) : (
         <div className="mx-auto max-w-3xl px-5 py-6 sm:px-8">
           {view === "band" ? (
@@ -233,6 +320,8 @@ export function ClimateApp() {
                 宜居月数 = 月均温落在 15–25 ℃ 的月份数;避暑指数 = 6–8 月平均月均温(越低越凉);避寒指数 = 12、1、2 月平均月均温(越高越暖)。
               </p>
 
+              <ComfortCalendar score={score} />
+
               <section className="mt-4 overflow-hidden rounded-xl border border-line bg-surface">
                 <table className="w-full border-collapse text-[12px]">
                   <thead>
@@ -257,6 +346,8 @@ export function ClimateApp() {
                   </tbody>
                 </table>
               </section>
+
+              <EnvTable id={city.id} />
 
               <section className="mt-4 overflow-hidden rounded-xl border border-line bg-surface p-4">
                 <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">

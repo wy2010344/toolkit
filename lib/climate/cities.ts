@@ -205,6 +205,15 @@ export const CITIES: CityMeta[] = [
     note: "抚仙湖北岸,海拔约 1750 m;夏季凉爽、冬季温和,湖面调节明显,距昆明约 1 小时。",
   },
   {
+    id: "tonghai",
+    name: "通海县",
+    region: "云南",
+    lat: 24.12,
+    lon: 102.75,
+    elevation: 1800,
+    note: "杞麓湖畔「礼乐名邦」古城,海拔约 1800 m;年均温约 16 ℃,冬无严寒、夏无酷暑,干湿季分明,动车约 1 小时到昆明。",
+  },
+  {
     id: "jianshui",
     name: "建水",
     region: "云南",

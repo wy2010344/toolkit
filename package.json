@@ -5,6 +5,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:atlas": "node --experimental-strip-types --import ./scripts/ts-register.mjs scripts/build-yunnan-atlas.mjs",
+    "verify:atlas": "node --experimental-strip-types --import ./scripts/ts-register.mjs scripts/verify-atlas-comfort.mjs",
+    "check:structure": "node scripts/check-structure.mjs components/climate/*.tsx lib/climate/*.ts lib/climate/atlas/*.ts scripts/*.mjs",
     "start": "next start",
     "lint": "eslint"
   },

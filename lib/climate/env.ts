@@ -1,5 +1,5 @@
 /**
- * 三十城逐月环境与舒适度均值(2023–2025,共 3 年)。
+ * 各城逐月环境与舒适度均值(2023–2025,共 3 年)。
  *
  * 数据源:Open-Meteo Historical Weather API(ERA5 再分析),timezone=Asia/Shanghai,
  * 逐日取 relative_humidity_2m_mean / precipitation_sum / sunshine_duration / cloud_cover_mean /
@@ -498,5 +498,20 @@ export const MONTHLY_ENV: Record<CityId, MonthlyEnv[]> = {
     { m: 10, feels: 18.3, hum: 72.8, precip: 110, rainDays: 15, heavyRain: 0.3, sun: 260, cloud: 66.7, rad: 13.8, wind: 5.6, gust: 24.1, windyDays: 0.3, hot30: 0.3, frost: 0 },
     { m: 11, feels: 12.5, hum: 65.2, precip: 59, rainDays: 7.7, heavyRain: 0, sun: 239, cloud: 47.8, rad: 11.8, wind: 5.4, gust: 23.3, windyDays: 1, hot30: 0, frost: 0 },
     { m: 12, feels: 9.4, hum: 55.9, precip: 5, rainDays: 2.3, heavyRain: 0, sun: 285, cloud: 34.3, rad: 12.2, wind: 5.4, gust: 27.8, windyDays: 4.7, hot30: 0, frost: 0 },
+  ],
+  // 通海县
+  tonghai: [
+    { m: 1, feels: 7.3, hum: 74.9, precip: 27, rainDays: 6.3, heavyRain: 0, sun: 243, cloud: 46.8, rad: 13.2, wind: 6.9, gust: 40.8, windyDays: 17, hot30: 0, frost: 1.3 },
+    { m: 2, feels: 10.7, hum: 63.5, precip: 16, rainDays: 3.7, heavyRain: 0, sun: 264, cloud: 40.9, rad: 17.1, wind: 9, gust: 52.6, windyDays: 24.3, hot30: 0, frost: 0 },
+    { m: 3, feels: 13.8, hum: 56.4, precip: 14, rainDays: 3.3, heavyRain: 0, sun: 307, cloud: 37.8, rad: 19.5, wind: 9.5, gust: 54.6, windyDays: 27, hot30: 0, frost: 0 },
+    { m: 4, feels: 18.6, hum: 48, precip: 18, rainDays: 4, heavyRain: 0, sun: 334, cloud: 36.6, rad: 22.7, wind: 10, gust: 56.5, windyDays: 28.3, hot30: 1.7, frost: 0 },
+    { m: 5, feels: 20.3, hum: 66.9, precip: 104, rainDays: 15.7, heavyRain: 0.7, sun: 318, cloud: 56.6, rad: 21.4, wind: 8, gust: 43.7, windyDays: 20, hot30: 4, frost: 0 },
+    { m: 6, feels: 21.9, hum: 80.7, precip: 218, rainDays: 25.3, heavyRain: 1.7, sun: 278, cloud: 83, rad: 19.8, wind: 6.6, gust: 35.9, windyDays: 9, hot30: 1.3, frost: 0 },
+    { m: 7, feels: 22.3, hum: 81.3, precip: 215, rainDays: 24.3, heavyRain: 1.3, sun: 314, cloud: 85.9, rad: 20.3, wind: 6.5, gust: 34.9, windyDays: 10, hot30: 0, frost: 0 },
+    { m: 8, feels: 21.5, hum: 85.2, precip: 286, rainDays: 28, heavyRain: 2.7, sun: 296, cloud: 81.6, rad: 18.6, wind: 5, gust: 29.6, windyDays: 3, hot30: 0, frost: 0 },
+    { m: 9, feels: 20.5, hum: 80.9, precip: 121, rainDays: 20.3, heavyRain: 0.7, sun: 299, cloud: 68.1, rad: 18.3, wind: 6.5, gust: 34.2, windyDays: 6.7, hot30: 0, frost: 0 },
+    { m: 10, feels: 17.1, hum: 80.7, precip: 59, rainDays: 13, heavyRain: 0, sun: 260, cloud: 63.8, rad: 14.8, wind: 6.2, gust: 31.1, windyDays: 2.7, hot30: 0, frost: 0 },
+    { m: 11, feels: 12.4, hum: 77.1, precip: 57, rainDays: 8.7, heavyRain: 0, sun: 228, cloud: 53.8, rad: 12.8, wind: 5.5, gust: 31.9, windyDays: 4, hot30: 0, frost: 0 },
+    { m: 12, feels: 9.3, hum: 77.8, precip: 22, rainDays: 4.7, heavyRain: 0, sun: 251, cloud: 51.4, rad: 12.6, wind: 5.9, gust: 37.2, windyDays: 12.3, hot30: 0, frost: 0 },
   ],
 };

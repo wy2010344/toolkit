@@ -1,0 +1,335 @@
+/**
+ * 旅居宜居评分:把「30 年逐月气温」与「近年逐月环境(湿度 / 雨日 / 日照 / 风 / 高温 / 霜冻)」
+ * 融合成一套可解释的舒适度模型,用于排行与单城舒适度日历。
+ *
+ * 设计原则:
+ *   - 纯函数、完全可复现,界面只负责展示,不在此做取舍。
+ *   - 每个维度都归一到 0–100,100 代表「最宜居」;权重视最终舒适度。
+ *   - 气温用 30 年均值(稳定),体感 / 湿度 / 风雨用近年口径(界面须标注两段时间)。
+ */
+import type { CityClimate, CityId, MonthlyTemp } from "./types";
+import { MONTHLY_ENV, type MonthlyEnv } from "./env";
+import { CLIMATES, climateOf } from "./cities";
+import { computeStats } from "./stats";
+
+export type DimKey = "overall" | "summer" | "winter" | "sunny" | "dry" | "calm";
+
+const clamp = (x: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, x));
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+/* ---------- 各子项 0–100 评分 ---------- */
+
+/**
+ * 气温舒适度:以月均温为输入,16–24 ℃ 为舒适平台,过冷 / 过热线性衰减。
+ * 导出的子项评分同时被图册构建脚本使用,保证「地图上的连续面」与「榜单上的离散分数」
+ * 来自同一套算法,不会各说各话。
+ */
+export function thermal(t: number): number {
+  if (t >= 16 && t <= 24) return 100;
+  if (t < 16) {
+    if (t >= 10) return lerp(100, 60, (16 - t) / 6);
+    return clamp(lerp(60, 0, (10 - t) / 10)); // 10 ℃→60,0 ℃→0
+  }
+  // t > 24
+  if (t <= 30) return lerp(100, 55, (t - 24) / 6);
+  return clamp(lerp(55, 0, (t - 30) / 5)); // 35 ℃→0
+}
+
+/** 相对湿度舒适度:40–65 % 最佳,过湿黏腻、过干可接受。 */
+export function humidity(h: number): number {
+  if (h < 35) return 70;
+  if (h <= 65) return 100;
+  if (h <= 80) return lerp(100, 55, (h - 65) / 15);
+  return clamp(lerp(55, 0, (h - 80) / 15));
+}
+
+/** 雨日舒适度:月雨日(≥1 mm)越少越便于户外生活。 */
+export function rainDayScore(d: number): number {
+  if (d <= 8) return 100;
+  if (d <= 16) return lerp(100, 70, (d - 8) / 8);
+  if (d <= 24) return lerp(70, 35, (d - 16) / 8);
+  return clamp(lerp(35, 0, (d - 24) / 6));
+}
+
+/** 日照舒适度:月日照时数越多越好(下限给 40,避免阴城直接归零)。 */
+export function sunScore(s: number): number {
+  return clamp(lerp(40, 100, (s - 150) / (300 - 150)), 40, 100);
+}
+
+/** 大风舒适度:月强阵风日(≥6 级)越少越舒适。 */
+export function windScore(w: number): number {
+  if (w <= 5) return 100;
+  if (w <= 15) return lerp(100, 70, (w - 5) / 10);
+  if (w <= 25) return lerp(70, 35, (w - 15) / 10);
+  return clamp(lerp(35, 0, (w - 25) / 10));
+}
+
+/** 酷热舒适度:月最高温 >30 ℃ 天数越少越好。 */
+export function heatScore(h: number): number {
+  if (h <= 1) return 100;
+  if (h <= 10) return lerp(100, 60, (h - 1) / 9);
+  if (h <= 25) return lerp(60, 20, (h - 10) / 15);
+  return clamp(lerp(20, 0, (h - 25) / 10));
+}
+
+/** 霜冻舒适度:月霜冻(<0 ℃)天数越少越好。 */
+export function frostScore(f: number): number {
+  if (f <= 1) return 100;
+  if (f <= 5) return lerp(100, 50, (f - 1) / 4);
+  return clamp(lerp(50, 0, (f - 5) / 10));
+}
+
+/** 逐月舒适度各子项权重(合计 1)。 */
+const W = { thermal: 0.38, rain: 0.2, humidity: 0.14, wind: 0.08, heat: 0.08, frost: 0.06, sun: 0.06 };
+
+/** 计算某个月舒适度所需的原始要素(任何来源都可以喂进来:站点、插值栅格……)。 */
+export interface ComfortInputs {
+  /** 月均温 ℃(30 年口径)。 */
+  temp: number;
+  /** 相对湿度 %。 */
+  hum: number;
+  /** 月雨日数(≥1 mm)。 */
+  rainDays: number;
+  /** 月日照时数 h。 */
+  sun: number;
+  /** 月强阵风日数(≥6 级)。 */
+  windyDays: number;
+  /** 月 >30 ℃ 天数。 */
+  hot30: number;
+  /** 月霜冻(<0 ℃)天数。 */
+  frost: number;
+}
+
+/** 单月舒适度的各子项明细。 */
+export interface ComfortBreakdown {
+  /** 加权总分 0–100。 */
+  score: number;
+  thermal: number;
+  humidity: number;
+  rain: number;
+  sun: number;
+  wind: number;
+  heat: number;
+  frost: number;
+}
+
+/**
+ * 单月舒适度:把七项要素按权重合成 0–100 分。
+ * 城市评分与图册上的连续宜居度面都调用这一个函数。
+ */
+export function comfortOf(i: ComfortInputs): ComfortBreakdown {
+  const thermal = thermalScore(i.temp);
+  const humidity = humidityScore(i.hum);
+  const rain = rainDayScore(i.rainDays);
+  const sun = sunScore(i.sun);
+  const wind = windScore(i.windyDays);
+  const heat = heatScore(i.hot30);
+  const frost = frostScore(i.frost);
+  const score =
+    thermal * W.thermal + rain * W.rain + humidity * W.humidity + wind * W.wind + heat * W.heat + frost * W.frost + sun * W.sun;
+  return {
+    score: Math.round(score * 10) / 10,
+    thermal: Math.round(thermal),
+    humidity: Math.round(humidity),
+    rain: Math.round(rain),
+    sun: Math.round(sun),
+    wind: Math.round(wind),
+    heat: Math.round(heat),
+    frost: Math.round(frost),
+  };
+}
+
+// 内部别名,避免与 MonthlyEnv 的字段名混淆。
+const thermalScore = thermal;
+const humidityScore = humidity;
+
+export interface MonthComfort {
+  m: number;
+  temp: number; // 月均温(30 年)
+  feels: number; // 月体感(近年)
+  score: number; // 综合舒适度 0–100
+  thermal: number;
+  humidity: number;
+  rain: number;
+  sun: number;
+  wind: number;
+  heat: number;
+  frost: number;
+}
+
+export interface CityScore {
+  id: CityId;
+  name: string;
+  region: string;
+  elevation: number;
+  /** 综合宜居指数 0–100(全年逐月舒适度均值)。 */
+  overall: number;
+  /** 舒适度 ≥75 的月份数。 */
+  goodMonths: number;
+  /** 避暑:6–8 月舒适度均值。 */
+  summer: number;
+  /** 避寒:12、1、2 月舒适度均值。 */
+  winter: number;
+  /** 多日照:全年日照评分均值。 */
+  sunny: number;
+  /** 少雨:全年雨日评分均值(越高越干爽)。 */
+  dry: number;
+  /** 怕风:全年大风评分均值(越高越安稳)。 */
+  calm: number;
+  /** 气候分型标签(按气温)。 */
+  climateTag: string;
+  /** 降水格局标签。 */
+  rainTag: string;
+  /** 最佳旅居时段文字描述。 */
+  bestWindow: string;
+  months: MonthComfort[];
+}
+
+/** 单个城市的逐月舒适度与各维度评分。 */
+export function scoreCity(climate: CityClimate, env: MonthlyEnv[]): CityScore {
+  const months: MonthComfort[] = climate.months.map((mt: MonthlyTemp, i) => {
+    const e = env[i];
+    const c = comfortOf({
+      temp: mt.mean,
+      hum: e.hum,
+      rainDays: e.rainDays,
+      sun: e.sun,
+      windyDays: e.windyDays,
+      hot30: e.hot30,
+      frost: e.frost,
+    });
+    return {
+      m: mt.m,
+      temp: mt.mean,
+      feels: e.feels,
+      score: c.score,
+      thermal: c.thermal,
+      humidity: c.humidity,
+      rain: c.rain,
+      sun: c.sun,
+      wind: c.wind,
+      heat: c.heat,
+      frost: c.frost,
+    };
+  });
+
+  const avg = (sel: (x: MonthComfort) => number) =>
+    Math.round((months.reduce((s, x) => s + sel(x), 0) / 12) * 10) / 10;
+
+  const overall = avg((x) => x.score);
+  const goodMonths = months.filter((x) => x.score >= 75).length;
+  const summer = Math.round(
+    ((months[5].score + months[6].score + months[7].score) / 3) * 10,
+  ) / 10;
+  const winter = Math.round(
+    ((months[11].score + months[0].score + months[1].score) / 3) * 10,
+  ) / 10;
+  const sunny = avg((x) => x.sun);
+  const dry = avg((x) => x.rain);
+  const calm = avg((x) => x.wind);
+
+  const stats = computeStats(climate.months);
+  const climateTag = classifyClimate(stats.annualMean, stats.annualRange, stats.summerIndex, stats.winterIndex);
+  const rainTag = classifyRain(env);
+  const bestWindow = bestWindowText(months.map((x) => x.score));
+
+  return {
+    id: climate.id,
+    name: climate.name,
+    region: climate.region,
+    elevation: climate.elevation,
+    overall,
+    goodMonths,
+    summer,
+    winter,
+    sunny,
+    dry,
+    calm,
+    climateTag,
+    rainTag,
+    bestWindow,
+    months,
+  };
+}
+
+/** 气温主导的气候分型。 */
+function classifyClimate(annualMean: number, range: number, summer: number, winter: number): string {
+  if (range <= 16 && annualMean >= 13 && annualMean <= 21) return "四季如春";
+  if (winter < 7) return "冬寒夏凉";
+  if (summer > 27 && winter >= 12) return "夏热冬暖";
+  if (summer <= 22 && winter >= 9) return "夏凉冬温";
+  if (annualMean < 12) return "冷凉高地";
+  if (range >= 18) return "四季分明";
+  return "温和";
+}
+
+/** 降水格局分型。 */
+function classifyRain(env: MonthlyEnv[]): string {
+  const wet = [4, 5, 6, 7, 8, 9].map((i) => env[i].rainDays); // 5–10 月
+  const dry = [10, 11, 0, 1, 2, 3].map((i) => env[i].rainDays); // 11–4 月
+  const avg = (a: number[]) => a.reduce((s, x) => s + x, 0) / a.length;
+  const all = avg(env.map((e) => e.rainDays));
+  if (avg(wet) >= 18 && avg(dry) <= 7) return "干湿分明·雨季长";
+  if (all <= 10) return "全年少雨";
+  if (all >= 18) return "全年多雨";
+  return "降水适中";
+}
+
+/** 找出舒适度 ≥70 的最长连续月份区间(允许跨年),生成文字。 */
+function bestWindowText(scores: number[]): string {
+  const ok = scores.map((s) => s >= 70);
+  if (ok.every(Boolean)) return "全年皆宜";
+  if (ok.every((b) => !b)) return "无明显舒适月";
+
+  // 复制成双倍数组处理跨年连续。
+  const ext = [...ok, ...ok];
+  let bestStart = -1;
+  let bestLen = 0;
+  let curStart = -1;
+  let curLen = 0;
+  for (let i = 0; i < ext.length; i++) {
+    if (ext[i]) {
+      if (curLen === 0) curStart = i;
+      curLen++;
+      if (curLen > bestLen && curLen <= 12) {
+        bestLen = curLen;
+        bestStart = curStart;
+      }
+    } else {
+      curLen = 0;
+    }
+  }
+  if (bestStart < 0 || bestLen === 0) return "分散舒适";
+  const m = (idx: number) => ((idx % 12) + 1); // 1–12
+  const from = m(bestStart);
+  const to = m(bestStart + bestLen - 1);
+  return bestLen >= 10 ? `${from}–${to}月(几乎全年)` : `${from}–${to}月`;
+}
+
+/** 全部城市的评分(按综合指数降序)。 */
+export function scoreAll(list: CityClimate[] = CLIMATES): CityScore[] {
+  return list
+    .map((c) => scoreCity(c, MONTHLY_ENV[c.id]))
+    .sort((a, b) => b.overall - a.overall);
+}
+
+/** 针对某一偏好维度排序(降序)。 */
+export function rankBy(dim: DimKey): CityScore[] {
+  const all = scoreAll();
+  return all.sort((a, b) => b[dim] - a[dim]);
+}
+
+/** 维度元信息:供 UI 渲染分段控件与说明。 */
+export const DIMENSIONS: Array<{ key: DimKey; label: string; desc: string }> = [
+  { key: "overall", label: "综合", desc: "全年逐月舒适度均值,兼顾温湿风雨" },
+  { key: "summer", label: "避暑", desc: "6–8 月越凉快、越舒适越靠前" },
+  { key: "winter", label: "避寒", desc: "12–2 月越温暖、越舒适越靠前" },
+  { key: "sunny", label: "多日照", desc: "全年日照越充裕越靠前" },
+  { key: "dry", label: "少雨", desc: "雨日越少、越干爽越靠前" },
+  { key: "calm", label: "怕风", desc: "大风日越少、越安稳越靠前" },
+];
+
+/** 取单城评分的便捷方法。 */
+export function scoreOf(id: CityId): CityScore {
+  return scoreCity(climateOf(id), MONTHLY_ENV[id]);
+}

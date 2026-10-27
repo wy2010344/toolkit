@@ -15,7 +15,7 @@
 | --- | --- | --- | --- |
 | [LLM 实验室](https://toolkit-flax.vercel.app/tools/llm-lab) | 8 节课从零手写一个微型 LLM,走完分词 → 注意力 → 训练 → 生成的完整原理 | 纯 TypeScript 真·梯度下降(loss 真实下降),注意力热力图、可插拔架构模块、术语表 | ✅ |
 | [DFT 听音室](https://toolkit-flax.vercel.app/tools/dft-lab) | 不背公式,用可跑的例程和声音理解离散傅里叶变换 | "探针点积"实现、波形 / 乘积柱 / 频谱联动 SVG、Web Audio 可听化 | ✅ |
-| [旅居气候对比](https://toolkit-flax.vercel.app/tools/climate) | 对比 30 座候选城市的逐月气温与体感指标 | 固定刻度温度带图、多城折线、山体阴影 + 等值线的地图视角 | ✅ |
+| [旅居气候对比](https://toolkit-flax.vercel.app/tools/climate) | 把云南的宜居度画成连续等值面,鼠标任意位置可读数;31 座候选城市的单城温度带、多城折线与偏好排行 | 浏览器端栅格插值 + marching squares、二值探针栅格逐点读数、免 key 在线底图叠加等高线 | ✅ |
 | [Loop Engineering 流程图](https://toolkit-flax.vercel.app/tools/loop-engineering) | 人机闭环工程模型的流程图 | 源码即图,改 Mermaid 文本即时重绘 | ✅ |
 | [目录对比同步](https://toolkit-flax.vercel.app/tools/dir-diff) | 逐文件哈希对比两个目录,diff 查看,按方向同步 | NDJSON 流式进度、size 短路 + 流式 SHA-1、dry-run 同步计划、git 分支切换 | ⚠️ 仅本地 |
 
