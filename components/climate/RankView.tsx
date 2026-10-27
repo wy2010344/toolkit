@@ -52,15 +52,28 @@ function Segmented<T extends string>({
   );
 }
 
-/** 权重滑块的七项要素。 */
-const WEIGHT_ITEMS: Array<{ key: keyof ComfortWeights; label: string }> = [
-  { key: "thermal", label: "气温舒适" },
-  { key: "rain", label: "雨日" },
-  { key: "humidity", label: "湿度" },
-  { key: "wind", label: "大风" },
-  { key: "heat", label: "酷热" },
-  { key: "frost", label: "霜冻" },
-  { key: "sun", label: "日照" },
+/** 权重滑块的十项要素:气候七项 + 规则换算的三项生活指标。 */
+const WEIGHT_GROUPS: Array<{ title: string; items: Array<{ key: keyof ComfortWeights; label: string }> }> = [
+  {
+    title: "气候(逐月舒适度)",
+    items: [
+      { key: "thermal", label: "气温舒适" },
+      { key: "rain", label: "雨日" },
+      { key: "humidity", label: "湿度" },
+      { key: "wind", label: "大风" },
+      { key: "heat", label: "酷热" },
+      { key: "frost", label: "霜冻" },
+      { key: "sun", label: "日照" },
+    ],
+  },
+  {
+    title: "生活(事实值规则换算)",
+    items: [
+      { key: "cost", label: "物价" },
+      { key: "safety", label: "安全" },
+      { key: "convenience", label: "便利" },
+    ],
+  },
 ];
 
 /** 自定义权重:滑块只调相对比例,右侧显示归一后的真实占比。 */
@@ -72,37 +85,46 @@ function WeightPanel({
   onChange: (w: ComfortWeights) => void;
 }) {
   const pct = normalizedWeights(weights);
-  const changed = WEIGHT_ITEMS.some((it) => weights[it.key] !== DEFAULT_WEIGHTS[it.key]);
+  const changed = WEIGHT_GROUPS.flatMap((g) => g.items).some((it) => weights[it.key] !== DEFAULT_WEIGHTS[it.key]);
+  const lifeShare = (pct.cost + pct.safety + pct.convenience) * 100;
   return (
     <details className="mt-3 rounded-xl border border-line bg-surface">
       <summary className="flex cursor-pointer flex-wrap items-baseline gap-x-2 gap-y-1 px-3 py-2 text-[12px] font-medium text-ink">
         自定义权重
         <span className="text-[10.5px] font-normal text-faint">
-          {changed ? "已偏离默认比例,榜单与单城分数随之重算" : "默认:气温 38% · 雨日 20% · 湿度 14% · 风与酷热各 8% · 霜冻与日照各 6%"}
+          {changed
+            ? `已偏离默认比例,榜单与单城分数随之重算(生活项合计 ${lifeShare.toFixed(0)}%)`
+            : "默认:气候 85%、物价 / 安全 / 便利合计 15%;想穷游就把物价拉高、气候拉低"}
         </span>
       </summary>
-      <div className="grid gap-x-5 gap-y-2 px-3 pt-1 sm:grid-cols-2">
-        {WEIGHT_ITEMS.map((it) => (
-          <label key={it.key} className="flex items-center gap-2">
-            <span className="w-14 shrink-0 text-[11px] text-muted">{it.label}</span>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              step={1}
-              value={weights[it.key]}
-              onChange={(e) => onChange({ ...weights, [it.key]: Number(e.target.value) })}
-              className="h-1 flex-1 cursor-pointer accent-ink"
-            />
-            <span className="w-9 shrink-0 text-right font-mono text-[11px] text-ink">
-              {(pct[it.key] * 100).toFixed(0)}%
-            </span>
-          </label>
-        ))}
-      </div>
-      <div className="flex flex-wrap items-center justify-between gap-2 px-3 pb-2.5 pt-1.5">
+      {WEIGHT_GROUPS.map((g) => (
+        <div key={g.title} className="px-3">
+          <div className="mt-1.5 text-[10px] font-medium text-faint">{g.title}</div>
+          <div className="grid gap-x-5 gap-y-2 pt-1 sm:grid-cols-2">
+            {g.items.map((it) => (
+              <label key={it.key} className="flex items-center gap-2">
+                <span className="w-14 shrink-0 text-[11px] text-muted">{it.label}</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={weights[it.key]}
+                  onChange={(e) => onChange({ ...weights, [it.key]: Number(e.target.value) })}
+                  className="h-1 flex-1 cursor-pointer accent-ink"
+                />
+                <span className="w-9 shrink-0 text-right font-mono text-[11px] text-ink">
+                  {(pct[it.key] * 100).toFixed(0)}%
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+      ))}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 pb-2.5 pt-2">
         <p className="flex-1 text-[10px] leading-relaxed text-faint">
-          滑块只是相对比例,系统自动归一,全部调大不影响结果。图册的连续等值面是预生成栅格,仍按默认权重着色,只有榜单与单城 / 日历跟随自定义权重。
+          滑块只是相对比例,系统自动归一,全部调大不影响结果。物价按房租中位数换算,便利按机场 / 铁路 / 三级医院折算,
+          安全按地震、台风、地质灾害扣分,规则见 lib/climate/score.ts。图册的连续等值面是预生成栅格,只反映气候项。
         </p>
         <button
           type="button"
@@ -128,6 +150,9 @@ function Detail({ id, weights }: { id: CityId; weights: ComfortWeights }) {
     { key: "sunny", label: "多日照" },
     { key: "dry", label: "少雨" },
     { key: "calm", label: "怕风" },
+    { key: "cost", label: "物价" },
+    { key: "safety", label: "安全" },
+    { key: "convenience", label: "便利" },
   ];
   return (
     <div className="flex flex-col gap-3">
@@ -194,10 +219,17 @@ export function RankView({
         <p className="mt-1.5 text-[13px] leading-relaxed text-faint">
           按你的偏好给 {CLIMATES.length} 城打分排序。当前维度:{active.label}——{active.desc}。点榜单里的城市可看右侧详情。
         </p>
-        <p className="mt-1 text-[12px] leading-relaxed text-faint">
-          这一列分数已经画成了云南全境的连续宜居度面:切到「地图 · 宜居」图层,同一个维度会以等值线加色带呈现,
-          鼠标移到任意位置都能读出该点的分项,不止这 {CLIMATES.length} 个点。
-        </p>
+        {dim === "cost" || dim === "safety" || dim === "convenience" ? (
+          <p className="mt-1 text-[12px] leading-relaxed text-faint">
+            这一维来自各城的事实值(房租 / 风险 / 机场铁路医院),按固定规则换算成 0–100,只有这 {CLIMATES.length} 个点,
+            图册没有对应的连续等值面。
+          </p>
+        ) : (
+          <p className="mt-1 text-[12px] leading-relaxed text-faint">
+            这一列分数已经画成了云南全境的连续宜居度面:切到「地图 · 宜居」图层,同一个维度会以等值线加色带呈现,
+            鼠标移到任意位置都能读出该点的分项,不止这 {CLIMATES.length} 个点。
+          </p>
+        )}
         <div className="mt-3">
           <Segmented<DimKey>
             value={dim}

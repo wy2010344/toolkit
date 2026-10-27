@@ -10,9 +10,13 @@
 import type { CityClimate, CityId, MonthlyTemp } from "./types";
 import { MONTHLY_ENV, type MonthlyEnv } from "./env";
 import { CLIMATES, climateOf } from "./cities";
+import { FACTS, type CityFacts } from "./archive";
 import { computeStats } from "./stats";
 
-export type DimKey = "overall" | "summer" | "winter" | "sunny" | "dry" | "calm";
+export type ClimateDim = "overall" | "summer" | "winter" | "sunny" | "dry" | "calm";
+
+/** 排行榜支持的排序维度:气候六项 + 三项规则换算的非气候指标。 */
+export type DimKey = ClimateDim | "cost" | "safety" | "convenience";
 
 const clamp = (x: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, x));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
@@ -79,9 +83,39 @@ export function frostScore(f: number): number {
   return clamp(lerp(50, 0, (f - 5) / 10));
 }
 
+/* ---------- 非气候三项:由城市事实值按规则换算 ----------
+ * 规则写在函数注释里,输入只有 archive.ts 的事实值,不掺主观调分。 */
+
 /**
- * 七项要素的权重。数值只需保持相对比例(界面上是 0–100 的滑块),
- * 合成前统一归一到合计 1,所以「全部调高一倍」不会改变结果。
+ * 物价:房租越低分越高。以 10 元/㎡·月 为满分基准,每高 1 元扣 3 分,
+ * 90 元/㎡·月(深圳)归零——这个斜率让 10–35 元的常见区间仍有区分度。
+ */
+export function costScore(rent: number): number {
+  return clamp(Math.round(100 - (rent - 10) * 3));
+}
+
+/**
+ * 安全:满分 100,按地震活跃度、台风、地质灾害三类风险扣分。
+ * 地震是最主要的风险来源(云南多数城市都在断裂带附近)。
+ */
+export function safetyScore(f: CityFacts): number {
+  const seismicPenalty = [0, 15, 32][f.seismic];
+  return clamp(100 - seismicPenalty - (f.typhoon ? 18 : 0) - (f.geoHazard ? 8 : 0));
+}
+
+/**
+ * 便利:县城基本生活服务打底 40 分,有机场 +22、有铁路客运 +18、
+ * 每有一家三级医院 +6(最多 +20)。上限刚好 100。
+ */
+export function convenienceScore(f: CityFacts): number {
+  return clamp(40 + (f.airport ? 22 : 0) + (f.rail ? 18 : 0) + Math.min(20, f.hospitals * 6));
+}
+
+/* ---------- 权重 ---------- */
+
+/**
+ * 十项要素的权重:气候七项 + 物价 / 安全 / 便利。
+ * 数值只需保持相对比例(界面上是 0–100 的滑块),合成前统一归一到合计 1。
  */
 export interface ComfortWeights {
   thermal: number;
@@ -91,9 +125,15 @@ export interface ComfortWeights {
   heat: number;
   frost: number;
   sun: number;
+  cost: number;
+  safety: number;
+  convenience: number;
 }
 
-/** 默认权重:气温主导,其次雨日与湿度。与图册连续面所用的权重保持一致。 */
+/**
+ * 默认权重:气候占大头(气候七项合计 100),非气候合计 18,
+ * 即默认综合分约 85% 看气候、15% 看物价 / 安全 / 便利。
+ */
 export const DEFAULT_WEIGHTS: ComfortWeights = {
   thermal: 38,
   rain: 20,
@@ -102,13 +142,38 @@ export const DEFAULT_WEIGHTS: ComfortWeights = {
   heat: 8,
   frost: 6,
   sun: 6,
+  cost: 8,
+  safety: 4,
+  convenience: 6,
 };
 
-/** 归一化权重;全为 0 时回落到默认,避免除零。 */
+const weightSum = (w: ComfortWeights) =>
+  w.thermal + w.rain + w.humidity + w.wind + w.heat + w.frost + w.sun + w.cost + w.safety + w.convenience;
+
+/** 归一化全部十项;全为 0 时回落到默认,避免除零。 */
 export function normalizedWeights(w: ComfortWeights): ComfortWeights {
-  const sum = w.thermal + w.rain + w.humidity + w.wind + w.heat + w.frost + w.sun;
+  const sum = weightSum(w);
   if (sum <= 0) return normalizedWeights(DEFAULT_WEIGHTS);
   return {
+    thermal: w.thermal / sum,
+    rain: w.rain / sum,
+    humidity: w.humidity / sum,
+    wind: w.wind / sum,
+    heat: w.heat / sum,
+    frost: w.frost / sum,
+    sun: w.sun / sum,
+    cost: w.cost / sum,
+    safety: w.safety / sum,
+    convenience: w.convenience / sum,
+  };
+}
+
+/** 只归一化气候七项:逐月舒适度始终是 0–100 的纯气候分,不受非气候权重稀释。 */
+function normalizedClimateWeights(w: ComfortWeights): ComfortWeights {
+  const sum = w.thermal + w.rain + w.humidity + w.wind + w.heat + w.frost + w.sun;
+  if (sum <= 0) return normalizedClimateWeights(DEFAULT_WEIGHTS);
+  return {
+    ...w,
     thermal: w.thermal / sum,
     rain: w.rain / sum,
     humidity: w.humidity / sum,
@@ -162,7 +227,7 @@ export function comfortOf(i: ComfortInputs, weights: ComfortWeights = DEFAULT_WE
   const wind = windScore(i.windyDays);
   const heat = heatScore(i.hot30);
   const frost = frostScore(i.frost);
-  const w = normalizedWeights(weights);
+  const w = normalizedClimateWeights(weights);
   const score =
     thermal * w.thermal + rain * w.rain + humidity * w.humidity + wind * w.wind + heat * w.heat + frost * w.frost + sun * w.sun;
   return {
@@ -200,8 +265,16 @@ export interface CityScore {
   name: string;
   region: string;
   elevation: number;
-  /** 综合宜居指数 0–100(全年逐月舒适度均值)。 */
+  /** 气候综合指数 0–100(全年逐月舒适度均值,不含非气候项)。 */
+  climate: number;
+  /** 综合宜居指数 0–100:气候分与非气候三项按当前权重合成。 */
   overall: number;
+  /** 物价 0–100,越高越便宜。 */
+  cost: number;
+  /** 安全 0–100,越高风险越低。 */
+  safety: number;
+  /** 便利 0–100,医疗与交通通达度。 */
+  convenience: number;
   /** 舒适度 ≥75 的月份数。 */
   goodMonths: number;
   /** 避暑:6–8 月舒适度均值。 */
@@ -261,7 +334,20 @@ export function scoreCity(
   const avg = (sel: (x: MonthComfort) => number) =>
     Math.round((months.reduce((s, x) => s + sel(x), 0) / 12) * 10) / 10;
 
-  const overall = avg((x) => x.score);
+  const climateScore = avg((x) => x.score);
+  const facts = FACTS[climate.id];
+  const cost = costScore(facts.rent);
+  const safety = safetyScore(facts);
+  const convenience = convenienceScore(facts);
+
+  // 综合分 = 气候分与非气候三项按归一后的权重加权;气候七项内部的归一已在 comfortOf 里做过。
+  const w = normalizedWeights(weights);
+  const climateShare = w.thermal + w.rain + w.humidity + w.wind + w.heat + w.frost + w.sun;
+  const overall =
+    Math.round(
+      (climateScore * climateShare + cost * w.cost + safety * w.safety + convenience * w.convenience) * 10,
+    ) / 10;
+
   const goodMonths = months.filter((x) => x.score >= 75).length;
   const summer = Math.round(
     ((months[5].score + months[6].score + months[7].score) / 3) * 10,
@@ -283,7 +369,11 @@ export function scoreCity(
     name: climate.name,
     region: climate.region,
     elevation: climate.elevation,
+    climate: climateScore,
     overall,
+    cost,
+    safety,
+    convenience,
     goodMonths,
     summer,
     winter,
@@ -366,12 +456,15 @@ export function rankBy(dim: DimKey, weights: ComfortWeights = DEFAULT_WEIGHTS): 
 
 /** 维度元信息:供 UI 渲染分段控件与说明。 */
 export const DIMENSIONS: Array<{ key: DimKey; label: string; desc: string }> = [
-  { key: "overall", label: "综合", desc: "全年逐月舒适度均值,兼顾温湿风雨" },
+  { key: "overall", label: "综合", desc: "气候分与物价 / 安全 / 便利按当前权重合成" },
   { key: "summer", label: "避暑", desc: "6–8 月越凉快、越舒适越靠前" },
   { key: "winter", label: "避寒", desc: "12–2 月越温暖、越舒适越靠前" },
   { key: "sunny", label: "多日照", desc: "全年日照越充裕越靠前" },
   { key: "dry", label: "少雨", desc: "雨日越少、越干爽越靠前" },
   { key: "calm", label: "怕风", desc: "大风日越少、越安稳越靠前" },
+  { key: "cost", label: "物价", desc: "房租中位数换算,越便宜越靠前(适合穷游)" },
+  { key: "safety", label: "安全", desc: "按地震、台风、地质灾害风险扣分,越高越安心" },
+  { key: "convenience", label: "便利", desc: "机场、铁路客运与三级医院按事实值折算" },
 ];
 
 /** 取单城评分的便捷方法。 */

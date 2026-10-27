@@ -25,6 +25,64 @@ export const ARCHIVE_FIELDS: Array<{ key: keyof CityArchive; label: string }> = 
   { key: "hazard", label: "高原与灾害" },
 ];
 
+/**
+ * 可用于「物价 / 安全 / 便利」规则换算的事实值。
+ *
+ * 与上面的文字档案同源(都是从医疗 / 交通 / 生活成本 / 灾害四段描述里摘出来的),
+ * 但这里只记事实、不打分;分数由 lib/climate/score.ts 里的规则统一换算,
+ * 这样口径公开、可复现,换城市只要补这几项事实值,不必重新拍脑袋。
+ */
+export interface CityFacts {
+  /** 房租中位数,元/㎡·月(取档案里区间的中点)。 */
+  rent: number;
+  /** 三级(含三甲)医院家数,超过 4 家按 4 计。 */
+  hospitals: number;
+  /** 是否有民航机场(含就近机场)。 */
+  airport: boolean;
+  /** 是否有铁路客运站(含动车、普速)。 */
+  rail: boolean;
+  /** 地震活跃度:0 低 / 1 中 / 2 高。 */
+  seismic: 0 | 1 | 2;
+  /** 是否受台风影响。 */
+  typhoon: boolean;
+  /** 是否有较高地质灾害风险(滑坡 / 泥石流 / 岩溶)。 */
+  geoHazard: boolean;
+}
+
+export const FACTS: Record<CityId, CityFacts> = {
+  kunming: { rent: 27.5, hospitals: 4, airport: true, rail: true, seismic: 1, typhoon: false, geoHazard: false },
+  yuxi: { rent: 20, hospitals: 1, airport: false, rail: true, seismic: 1, typhoon: false, geoHazard: false },
+  mengzi: { rent: 16, hospitals: 1, airport: true, rail: true, seismic: 2, typhoon: false, geoHazard: false },
+  puer: { rent: 16, hospitals: 1, airport: true, rail: true, seismic: 1, typhoon: false, geoHazard: false },
+  yongren: { rent: 11.5, hospitals: 0, airport: false, rail: false, seismic: 2, typhoon: false, geoHazard: false },
+  chongqing: { rent: 35, hospitals: 4, airport: true, rail: true, seismic: 0, typhoon: false, geoHazard: false },
+  shenzhen: { rent: 90, hospitals: 4, airport: true, rail: true, seismic: 0, typhoon: true, geoHazard: false },
+  qujing: { rent: 16, hospitals: 1, airport: false, rail: true, seismic: 1, typhoon: false, geoHazard: false },
+  xingyi: { rent: 16, hospitals: 1, airport: true, rail: true, seismic: 0, typhoon: false, geoHazard: true },
+  renhe: { rent: 16, hospitals: 0, airport: true, rail: true, seismic: 2, typhoon: false, geoHazard: false },
+  lincang: { rent: 14, hospitals: 1, airport: true, rail: true, seismic: 2, typhoon: false, geoHazard: false },
+  baoshan: { rent: 14, hospitals: 1, airport: true, rail: true, seismic: 2, typhoon: false, geoHazard: false },
+  gejiu: { rent: 14, hospitals: 1, airport: false, rail: false, seismic: 1, typhoon: false, geoHazard: false },
+  yuanyang: { rent: 11.5, hospitals: 0, airport: false, rail: false, seismic: 1, typhoon: false, geoHazard: true },
+  lvchun: { rent: 10, hospitals: 0, airport: false, rail: false, seismic: 1, typhoon: false, geoHazard: true },
+  honghe: { rent: 11.5, hospitals: 0, airport: false, rail: false, seismic: 1, typhoon: false, geoHazard: true },
+  mojiang: { rent: 13, hospitals: 0, airport: false, rail: true, seismic: 1, typhoon: false, geoHazard: false },
+  yuanjiang: { rent: 11.5, hospitals: 0, airport: false, rail: true, seismic: 1, typhoon: false, geoHazard: true },
+  dali: { rent: 21.5, hospitals: 1, airport: true, rail: true, seismic: 2, typhoon: false, geoHazard: false },
+  tengchong: { rent: 16, hospitals: 1, airport: true, rail: false, seismic: 2, typhoon: false, geoHazard: false },
+  chuxiong: { rent: 16, hospitals: 1, airport: false, rail: true, seismic: 1, typhoon: false, geoHazard: false },
+  chengjiang: { rent: 20, hospitals: 0, airport: false, rail: false, seismic: 0, typhoon: false, geoHazard: false },
+  tonghai: { rent: 14, hospitals: 0, airport: false, rail: true, seismic: 1, typhoon: false, geoHazard: false },
+  jianshui: { rent: 14, hospitals: 0, airport: false, rail: true, seismic: 1, typhoon: false, geoHazard: false },
+  shiping: { rent: 11.5, hospitals: 0, airport: false, rail: false, seismic: 1, typhoon: false, geoHazard: false },
+  mile: { rent: 14, hospitals: 0, airport: false, rail: true, seismic: 1, typhoon: false, geoHazard: false },
+  luxi: { rent: 11.5, hospitals: 0, airport: false, rail: false, seismic: 0, typhoon: false, geoHazard: true },
+  weishan: { rent: 14, hospitals: 0, airport: false, rail: false, seismic: 1, typhoon: false, geoHazard: true },
+  pingbian: { rent: 11.5, hospitals: 0, airport: false, rail: true, seismic: 1, typhoon: false, geoHazard: true },
+  jingdong: { rent: 11.5, hospitals: 0, airport: false, rail: false, seismic: 2, typhoon: false, geoHazard: false },
+  xichang: { rent: 16, hospitals: 1, airport: true, rail: true, seismic: 2, typhoon: false, geoHazard: false },
+};
+
 export const ARCHIVES: Record<CityId, CityArchive> = {
   kunming: {
     medical: "省会资源最强,三甲医院十余家(省一院、昆医附一院等)。",

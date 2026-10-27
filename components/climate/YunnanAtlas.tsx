@@ -27,7 +27,7 @@ import {
 } from "@/lib/climate/atlas/yunnan";
 import { FAULTS, QUAKES } from "@/lib/climate/atlas/faults";
 import { loadProbe, type Probe } from "@/lib/climate/atlas/probe";
-import { scoreAll, type DimKey } from "@/lib/climate/score";
+import { scoreAll, DIMENSIONS, type DimKey } from "@/lib/climate/score";
 import type { CityId } from "@/lib/climate/types";
 import type { MapPoint } from "./MapIndex";
 
@@ -125,8 +125,11 @@ const COMFORT_DIM: Record<string, DimKey> = {
   cCalm: "calm",
 };
 
-/** 反过来:评分维度 → 宜居度图层。地图与榜单共用一个偏好维度。 */
-const DIM_FIELD: Record<DimKey, string> = {
+/**
+ * 反过来:评分维度 → 宜居度图层。地图与榜单共用一个偏好维度。
+ * 物价 / 安全 / 便利没有对应的等值面(它们是离散的城市事实值),置空即可。
+ */
+const DIM_FIELD: Partial<Record<DimKey, string>> = {
   overall: "cOverall",
   summer: "cSummer",
   winter: "cWinter",
@@ -174,7 +177,11 @@ export function YunnanAtlas({
    * 宜居层不另存状态,直接由 dim 推导:偏好一改,地图与榜单立刻同步,不会出现两边不一致的中间帧。
    */
   const [manual, setManual] = useState<string | null>(null);
-  const sel = manual ?? DIM_FIELD[dim];
+  /** 物价 / 安全 / 便利没有等值面,此时仍停在综合宜居层。 */
+  const sel = manual ?? DIM_FIELD[dim] ?? "cOverall";
+  /** 偏好维度没有对应等值面时,在图题旁说明当前图册仍画气候面。 */
+  const noRaster = manual === null && DIM_FIELD[dim] === undefined;
+  const dimLabel = DIMENSIONS.find((d) => d.key === dim)?.label ?? "";
   const [showElev, setShowElev] = useState(true);
   const [probe, setProbe] = useState<ProbeRead | null>(null);
 
@@ -202,7 +209,7 @@ export function YunnanAtlas({
   const bandColors = meta ? (BAND_COLORS[sel] ?? []) : [];
 
   const cityScores = useMemo(() => {
-    const m: Partial<Record<CityId, Record<DimKey, number>>> = {};
+    const m: Partial<Record<CityId, Partial<Record<DimKey, number>>>> = {};
     for (const s of scoreAll())
       m[s.id] = { overall: s.overall, summer: s.summer, winter: s.winter, sunny: s.sunny, dry: s.dry, calm: s.calm };
     return m;
@@ -321,6 +328,11 @@ export function YunnanAtlas({
         <h2 className="text-[13px] font-semibold" style={{ color: C.label }}>
           云南 · 等值线图册
         </h2>
+        {noRaster && (
+          <span className="text-[10.5px] leading-tight" style={{ color: C.lineStrong }}>
+            「{dimLabel}」来自城市事实值,无等值面,现显示综合宜居
+          </span>
+        )}
         <div className="flex items-center gap-2">
           {GROUPS.map((g) => (
             <button
