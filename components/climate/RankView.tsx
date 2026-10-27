@@ -6,7 +6,15 @@
 
 import { useMemo } from "react";
 import { CLIMATES } from "@/lib/climate/cities";
-import { DIMENSIONS, rankBy, scoreOf, type DimKey } from "@/lib/climate/score";
+import {
+  DEFAULT_WEIGHTS,
+  DIMENSIONS,
+  normalizedWeights,
+  rankBy,
+  scoreOf,
+  type ComfortWeights,
+  type DimKey,
+} from "@/lib/climate/score";
 import type { CityId } from "@/lib/climate/types";
 import { cn } from "@/components/ui";
 import { ComfortCalendar } from "./ComfortCalendar";
@@ -44,10 +52,75 @@ function Segmented<T extends string>({
   );
 }
 
+/** 权重滑块的七项要素。 */
+const WEIGHT_ITEMS: Array<{ key: keyof ComfortWeights; label: string }> = [
+  { key: "thermal", label: "气温舒适" },
+  { key: "rain", label: "雨日" },
+  { key: "humidity", label: "湿度" },
+  { key: "wind", label: "大风" },
+  { key: "heat", label: "酷热" },
+  { key: "frost", label: "霜冻" },
+  { key: "sun", label: "日照" },
+];
+
+/** 自定义权重:滑块只调相对比例,右侧显示归一后的真实占比。 */
+function WeightPanel({
+  weights,
+  onChange,
+}: {
+  weights: ComfortWeights;
+  onChange: (w: ComfortWeights) => void;
+}) {
+  const pct = normalizedWeights(weights);
+  const changed = WEIGHT_ITEMS.some((it) => weights[it.key] !== DEFAULT_WEIGHTS[it.key]);
+  return (
+    <details className="mt-3 rounded-xl border border-line bg-surface">
+      <summary className="flex cursor-pointer flex-wrap items-baseline gap-x-2 gap-y-1 px-3 py-2 text-[12px] font-medium text-ink">
+        自定义权重
+        <span className="text-[10.5px] font-normal text-faint">
+          {changed ? "已偏离默认比例,榜单与单城分数随之重算" : "默认:气温 38% · 雨日 20% · 湿度 14% · 风与酷热各 8% · 霜冻与日照各 6%"}
+        </span>
+      </summary>
+      <div className="grid gap-x-5 gap-y-2 px-3 pt-1 sm:grid-cols-2">
+        {WEIGHT_ITEMS.map((it) => (
+          <label key={it.key} className="flex items-center gap-2">
+            <span className="w-14 shrink-0 text-[11px] text-muted">{it.label}</span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={weights[it.key]}
+              onChange={(e) => onChange({ ...weights, [it.key]: Number(e.target.value) })}
+              className="h-1 flex-1 cursor-pointer accent-ink"
+            />
+            <span className="w-9 shrink-0 text-right font-mono text-[11px] text-ink">
+              {(pct[it.key] * 100).toFixed(0)}%
+            </span>
+          </label>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 pb-2.5 pt-1.5">
+        <p className="flex-1 text-[10px] leading-relaxed text-faint">
+          滑块只是相对比例,系统自动归一,全部调大不影响结果。图册的连续等值面是预生成栅格,仍按默认权重着色,只有榜单与单城 / 日历跟随自定义权重。
+        </p>
+        <button
+          type="button"
+          onClick={() => onChange(DEFAULT_WEIGHTS)}
+          disabled={!changed}
+          className="rounded-md border border-line px-2 py-0.5 text-[11px] text-muted transition-colors hover:text-ink disabled:opacity-40"
+        >
+          恢复默认
+        </button>
+      </div>
+    </details>
+  );
+}
+
 const MEDAL = ["bg-acc-yellow-fg text-black", "bg-muted/40 text-ink", "bg-acc-orange-fg/70 text-black"];
 
-function Detail({ id }: { id: CityId }) {
-  const score = useMemo(() => scoreOf(id), [id]);
+function Detail({ id, weights }: { id: CityId; weights: ComfortWeights }) {
+  const score = useMemo(() => scoreOf(id, weights), [id, weights]);
   const dims: Array<{ key: DimKey; label: string }> = [
     { key: "overall", label: "综合" },
     { key: "summer", label: "避暑" },
@@ -88,7 +161,7 @@ function Detail({ id }: { id: CityId }) {
       <ComfortCalendar score={score} />
       <p className="text-[10.5px] leading-relaxed text-faint">
         评分模型:月均温用 1995–2024 共 30 年均值;体感、湿度、雨日、日照、大风、高温、霜冻用 2023–2025 近年逐月数据。
-        各子项归一到 0–100 后加权合成逐月舒适度,权重视气温(0.38)、雨日(0.20)、湿度(0.14)、风(0.08)、高温(0.08)、霜冻(0.06)、日照(0.06)。
+        各子项归一到 0–100 后按上方权重合成逐月舒适度,拖动滑块即可改比例(默认气温 0.38、雨日 0.20、湿度 0.14、风 0.08、高温 0.08、霜冻 0.06、日照 0.06)。
       </p>
     </div>
   );
@@ -99,14 +172,19 @@ export function RankView({
   onSelect,
   dim,
   onDim,
+  weights,
+  onWeights,
 }: {
   selected: CityId;
   onSelect: (id: CityId) => void;
   /** 当前偏好维度:与地图上的「宜居」图层共用同一个。 */
   dim: DimKey;
   onDim: (d: DimKey) => void;
+  /** 自定义权重:与单城 / 日历共用,保证全站同一套算法。 */
+  weights: ComfortWeights;
+  onWeights: (w: ComfortWeights) => void;
 }) {
-  const ranked = useMemo(() => rankBy(dim), [dim]);
+  const ranked = useMemo(() => rankBy(dim, weights), [dim, weights]);
   const active = DIMENSIONS.find((d) => d.key === dim)!;
 
   return (
@@ -127,6 +205,7 @@ export function RankView({
             options={DIMENSIONS.map((d) => ({ v: d.key, label: d.label }))}
           />
         </div>
+        <WeightPanel weights={weights} onChange={onWeights} />
       </header>
 
       <div className="grid gap-5 lg:grid-cols-[1.15fr_1fr]">
@@ -182,7 +261,7 @@ export function RankView({
 
         {/* 选中城市详情 */}
         <div className="lg:sticky lg:top-2 lg:self-start">
-          <Detail id={selected} />
+          <Detail id={selected} weights={weights} />
         </div>
       </div>
     </div>

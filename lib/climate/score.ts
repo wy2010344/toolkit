@@ -79,8 +79,45 @@ export function frostScore(f: number): number {
   return clamp(lerp(50, 0, (f - 5) / 10));
 }
 
-/** 逐月舒适度各子项权重(合计 1)。 */
-const W = { thermal: 0.38, rain: 0.2, humidity: 0.14, wind: 0.08, heat: 0.08, frost: 0.06, sun: 0.06 };
+/**
+ * 七项要素的权重。数值只需保持相对比例(界面上是 0–100 的滑块),
+ * 合成前统一归一到合计 1,所以「全部调高一倍」不会改变结果。
+ */
+export interface ComfortWeights {
+  thermal: number;
+  rain: number;
+  humidity: number;
+  wind: number;
+  heat: number;
+  frost: number;
+  sun: number;
+}
+
+/** 默认权重:气温主导,其次雨日与湿度。与图册连续面所用的权重保持一致。 */
+export const DEFAULT_WEIGHTS: ComfortWeights = {
+  thermal: 38,
+  rain: 20,
+  humidity: 14,
+  wind: 8,
+  heat: 8,
+  frost: 6,
+  sun: 6,
+};
+
+/** 归一化权重;全为 0 时回落到默认,避免除零。 */
+export function normalizedWeights(w: ComfortWeights): ComfortWeights {
+  const sum = w.thermal + w.rain + w.humidity + w.wind + w.heat + w.frost + w.sun;
+  if (sum <= 0) return normalizedWeights(DEFAULT_WEIGHTS);
+  return {
+    thermal: w.thermal / sum,
+    rain: w.rain / sum,
+    humidity: w.humidity / sum,
+    wind: w.wind / sum,
+    heat: w.heat / sum,
+    frost: w.frost / sum,
+    sun: w.sun / sum,
+  };
+}
 
 /** 计算某个月舒适度所需的原始要素(任何来源都可以喂进来:站点、插值栅格……)。 */
 export interface ComfortInputs {
@@ -117,7 +154,7 @@ export interface ComfortBreakdown {
  * 单月舒适度:把七项要素按权重合成 0–100 分。
  * 城市评分与图册上的连续宜居度面都调用这一个函数。
  */
-export function comfortOf(i: ComfortInputs): ComfortBreakdown {
+export function comfortOf(i: ComfortInputs, weights: ComfortWeights = DEFAULT_WEIGHTS): ComfortBreakdown {
   const thermal = thermalScore(i.temp);
   const humidity = humidityScore(i.hum);
   const rain = rainDayScore(i.rainDays);
@@ -125,8 +162,9 @@ export function comfortOf(i: ComfortInputs): ComfortBreakdown {
   const wind = windScore(i.windyDays);
   const heat = heatScore(i.hot30);
   const frost = frostScore(i.frost);
+  const w = normalizedWeights(weights);
   const score =
-    thermal * W.thermal + rain * W.rain + humidity * W.humidity + wind * W.wind + heat * W.heat + frost * W.frost + sun * W.sun;
+    thermal * w.thermal + rain * w.rain + humidity * w.humidity + wind * w.wind + heat * w.heat + frost * w.frost + sun * w.sun;
   return {
     score: Math.round(score * 10) / 10,
     thermal: Math.round(thermal),
@@ -186,18 +224,25 @@ export interface CityScore {
 }
 
 /** 单个城市的逐月舒适度与各维度评分。 */
-export function scoreCity(climate: CityClimate, env: MonthlyEnv[]): CityScore {
+export function scoreCity(
+  climate: CityClimate,
+  env: MonthlyEnv[],
+  weights: ComfortWeights = DEFAULT_WEIGHTS,
+): CityScore {
   const months: MonthComfort[] = climate.months.map((mt: MonthlyTemp, i) => {
     const e = env[i];
-    const c = comfortOf({
-      temp: mt.mean,
-      hum: e.hum,
-      rainDays: e.rainDays,
-      sun: e.sun,
-      windyDays: e.windyDays,
-      hot30: e.hot30,
-      frost: e.frost,
-    });
+    const c = comfortOf(
+      {
+        temp: mt.mean,
+        hum: e.hum,
+        rainDays: e.rainDays,
+        sun: e.sun,
+        windyDays: e.windyDays,
+        hot30: e.hot30,
+        frost: e.frost,
+      },
+      weights,
+    );
     return {
       m: mt.m,
       temp: mt.mean,
@@ -307,15 +352,15 @@ function bestWindowText(scores: number[]): string {
 }
 
 /** 全部城市的评分(按综合指数降序)。 */
-export function scoreAll(list: CityClimate[] = CLIMATES): CityScore[] {
+export function scoreAll(list: CityClimate[] = CLIMATES, weights: ComfortWeights = DEFAULT_WEIGHTS): CityScore[] {
   return list
-    .map((c) => scoreCity(c, MONTHLY_ENV[c.id]))
+    .map((c) => scoreCity(c, MONTHLY_ENV[c.id], weights))
     .sort((a, b) => b.overall - a.overall);
 }
 
 /** 针对某一偏好维度排序(降序)。 */
-export function rankBy(dim: DimKey): CityScore[] {
-  const all = scoreAll();
+export function rankBy(dim: DimKey, weights: ComfortWeights = DEFAULT_WEIGHTS): CityScore[] {
+  const all = scoreAll(CLIMATES, weights);
   return all.sort((a, b) => b[dim] - a[dim]);
 }
 
@@ -330,6 +375,6 @@ export const DIMENSIONS: Array<{ key: DimKey; label: string; desc: string }> = [
 ];
 
 /** 取单城评分的便捷方法。 */
-export function scoreOf(id: CityId): CityScore {
-  return scoreCity(climateOf(id), MONTHLY_ENV[id]);
+export function scoreOf(id: CityId, weights: ComfortWeights = DEFAULT_WEIGHTS): CityScore {
+  return scoreCity(climateOf(id), MONTHLY_ENV[id], weights);
 }

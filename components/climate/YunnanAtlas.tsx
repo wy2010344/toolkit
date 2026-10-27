@@ -307,7 +307,12 @@ export function YunnanAtlas({
   };
 
   const probeLabel = layerDim ? FIELD_META[sel].label : "综合宜居";
-  const probeValue = probe ? (layerDim ? probe.v[layerDim] : probe.v.cOverall) : 0;
+  /**
+   * 探针二进制里存的是 cOverall / cSummer 这类字段键,而 layerDim 是评分模型的维度键
+   * (overall / summer ...),两者不是一套命名,直接用 layerDim 索引会拿到 undefined。
+   * 所以当前图层直接按 sel(字段键)取;非宜居图层再回落到综合分。
+   */
+  const probeValue = probe ? (probe.v[sel] ?? probe.v.cOverall ?? 0) : 0;
 
   return (
     <div className="flex h-full min-h-0 flex-col" style={{ background: C.paper }}>

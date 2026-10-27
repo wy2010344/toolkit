@@ -17,7 +17,7 @@ import { ARCHIVES, ARCHIVE_FIELDS } from "@/lib/climate/archive";
 import { computeStats } from "@/lib/climate/stats";
 import { MONTHLY_ENV, ENV_PERIOD } from "@/lib/climate/env";
 import { MONTHLY_PM25, PM25_PERIOD } from "@/lib/climate/air";
-import { scoreOf, type DimKey } from "@/lib/climate/score";
+import { DEFAULT_WEIGHTS, scoreOf, type ComfortWeights, type DimKey } from "@/lib/climate/score";
 import type { CityId, MonthlyTemp } from "@/lib/climate/types";
 import { Toggle, cn } from "@/components/ui";
 import { TempBandChart } from "./TempBandChart";
@@ -145,10 +145,12 @@ export function ClimateApp() {
   const [showRef, setShowRef] = useState(true);
   /** 偏好维度:地图的「宜居」图层与推荐榜单共用,两边永远说同一件事。 */
   const [dim, setDim] = useState<DimKey>("overall");
+  /** 自定义权重:推荐、单城、舒适度日历三处共用;图册栅格是预生成的,仍按默认权重。 */
+  const [weights, setWeights] = useState<ComfortWeights>(DEFAULT_WEIGHTS);
 
   const city = climateOf(selected);
   const stats = useMemo(() => computeStats(city.months), [city]);
-  const score = useMemo(() => scoreOf(selected), [selected]);
+  const score = useMemo(() => scoreOf(selected, weights), [selected, weights]);
   const refs = useMemo(
     () => (showRef ? CLIMATES.filter((c) => c.id !== city.id).map((c) => c.months) : []),
     [city, showRef],
@@ -259,7 +261,14 @@ export function ClimateApp() {
       {/* 右侧 */}
       <main className={cn("min-w-0 flex-1", view === "map" ? "overflow-hidden" : "overflow-y-auto")}>
         {view === "rank" ? (
-          <RankView selected={selected} onSelect={setSelected} dim={dim} onDim={setDim} />
+          <RankView
+            selected={selected}
+            onSelect={setSelected}
+            dim={dim}
+            onDim={setDim}
+            weights={weights}
+            onWeights={setWeights}
+          />
         ) : view === "map" ? (
           <div className="flex h-full min-h-0 flex-col">
             <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-surface px-3 py-1.5">
