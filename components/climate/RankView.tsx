@@ -53,7 +53,7 @@ function Segmented<T extends string>({
   );
 }
 
-/** 权重滑块的十项要素:气候七项 + 规则换算的三项生活指标。 */
+/** 权重滑块的十三项要素:气候七项 + 生活三项 + 院落三项。 */
 const WEIGHT_GROUPS: Array<{ title: string; items: Array<{ key: keyof ComfortWeights; label: string }> }> = [
   {
     title: "气候(逐月舒适度)",
@@ -75,6 +75,14 @@ const WEIGHT_GROUPS: Array<{ title: string; items: Array<{ key: keyof ComfortWei
       { key: "convenience", label: "便利" },
     ],
   },
+  {
+    title: "院落与集市(想找院子种花草就调高)",
+    items: [
+      { key: "courtyard", label: "院落可得" },
+      { key: "planting", label: "种植条件" },
+      { key: "market", label: "集市快递" },
+    ],
+  },
 ];
 
 /** 自定义权重:滑块只调相对比例,右侧显示归一后的真实占比。 */
@@ -87,15 +95,18 @@ function WeightPanel({
 }) {
   const pct = normalizedWeights(weights);
   const changed = WEIGHT_GROUPS.flatMap((g) => g.items).some((it) => weights[it.key] !== DEFAULT_WEIGHTS[it.key]);
-  const lifeShare = (pct.cost + pct.safety + pct.convenience) * 100;
+  const lifeShare = (pct.cost + pct.safety + pct.convenience + pct.courtyard + pct.planting + pct.market) * 100;
+  const defPct = normalizedWeights(DEFAULT_WEIGHTS);
+  const defClimate =
+    (defPct.thermal + defPct.rain + defPct.humidity + defPct.wind + defPct.heat + defPct.frost + defPct.sun) * 100;
   return (
     <details className="mt-3 rounded-xl border border-line bg-surface">
       <summary className="flex cursor-pointer flex-wrap items-baseline gap-x-2 gap-y-1 px-3 py-2 text-[12px] font-medium text-ink">
         自定义权重
         <span className="text-[10.5px] font-normal text-faint">
           {changed
-            ? `已偏离默认比例,榜单与单城分数随之重算(生活项合计 ${lifeShare.toFixed(0)}%)`
-            : "默认:气候 85%、物价 / 安全 / 便利合计 15%;想穷游就把物价拉高、气候拉低"}
+            ? `已偏离默认比例,榜单与单城分数随之重算(气候占 ${(100 - lifeShare).toFixed(0)}%)`
+            : `默认:气候约 ${defClimate.toFixed(0)}%、生活与院落约 ${(100 - defClimate).toFixed(0)}%;想找院子种花草就把「院落可得」拉高,想穷游就把物价拉高`}
         </span>
       </summary>
       {WEIGHT_GROUPS.map((g) => (
@@ -125,7 +136,8 @@ function WeightPanel({
       <div className="flex flex-wrap items-center justify-between gap-2 px-3 pb-2.5 pt-2">
         <p className="flex-1 text-[10px] leading-relaxed text-faint">
           滑块只是相对比例,系统自动归一,全部调大不影响结果。物价按房租中位数换算,便利按机场 / 铁路 / 三级医院折算,
-          安全按地震、台风、地质灾害扣分,规则见 lib/climate/score.ts。图册的连续等值面是预生成栅格,只反映气候项。
+          安全按地震、台风、地质灾害扣分;院落可得按城区人口与租金、种植条件按无霜期 / 日照 / 年降水、集市快递按人口与
+          铁路机场折算,规则见 lib/climate/score.ts。图册的连续等值面是预生成栅格,只反映气候项。
         </p>
         <button
           type="button"
@@ -154,6 +166,9 @@ function Detail({ id, weights }: { id: CityId; weights: ComfortWeights }) {
     { key: "cost", label: "物价" },
     { key: "safety", label: "安全" },
     { key: "convenience", label: "便利" },
+    { key: "courtyard", label: "院落可得" },
+    { key: "planting", label: "种植条件" },
+    { key: "market", label: "集市快递" },
   ];
   return (
     <div className="flex flex-col gap-3">
@@ -188,6 +203,21 @@ function Detail({ id, weights }: { id: CityId; weights: ComfortWeights }) {
         </div>
       </div>
       <ComfortCalendar score={score} />
+
+      {/* 院落与邻里无法用公开数据打分,只给一份实地核验清单,避免分数制造虚假精确感。 */}
+      <details className="rounded-xl border border-line bg-surface">
+        <summary className="cursor-pointer px-3 py-2 text-[12px] font-medium text-ink">
+          院落 / 邻里实地核验清单
+          <span className="ml-1.5 text-[10.5px] font-normal text-faint">付费签字前逐条确认</span>
+        </summary>
+        <ul className="list-disc space-y-1 px-6 pb-3 pt-1 text-[11px] leading-relaxed text-muted">
+          <li>权属与租期:宅基地 / 农房能否出租、租期多久、违约与续租条款。</li>
+          <li>边界与共用:院墙、通道、排水、采光、树木归属写进合同。</li>
+          <li>邻里:隔壁是否常住、有无养殖 / 作坊噪声、村规民约、是否曾有纠纷。</li>
+          <li>种植:土层厚度、是否水泥硬化、灌溉水源、冬季日照是否被遮挡。</li>
+          <li>集市快递:快递能否到院、最近菜市场与卫生室多远、赶集是哪几天。</li>
+        </ul>
+      </details>
       <p className="text-[10.5px] leading-relaxed text-faint">
         评分模型:月均温用 1995–2024 共 30 年均值;体感、湿度、雨日、日照、大风、高温、霜冻用 2023–2025 近年逐月数据。
         各子项归一到 0–100 后按上方权重合成逐月舒适度,拖动滑块即可改比例(默认气温 0.38、雨日 0.20、湿度 0.14、风 0.08、高温 0.08、霜冻 0.06、日照 0.06)。
@@ -223,15 +253,15 @@ export function RankView({
         <p className="mt-1.5 text-[13px] leading-relaxed text-faint">
           按你的偏好给 {CLIMATES.length} 城打分排序。当前维度:{active.label}——{active.desc}。点榜单里的城市可看右侧详情。
         </p>
-        {dim === "cost" || dim === "safety" || dim === "convenience" ? (
-          <p className="mt-1 text-[12px] leading-relaxed text-faint">
-            这一维来自各城的事实值(房租 / 风险 / 机场铁路医院),按固定规则换算成 0–100,只有这 {CLIMATES.length} 个点,
-            图册没有对应的连续等值面。
-          </p>
-        ) : (
+        {["overall", "summer", "winter", "sunny", "dry", "calm"].includes(dim) ? (
           <p className="mt-1 text-[12px] leading-relaxed text-faint">
             这一列分数已经画成了云南全境的连续宜居度面:切到「地图 · 宜居」图层,同一个维度会以等值线加色带呈现,
             鼠标移到任意位置都能读出该点的分项,不止这 {CLIMATES.length} 个点。
+          </p>
+        ) : (
+          <p className="mt-1 text-[12px] leading-relaxed text-faint">
+            这一维来自各城的事实值(租金 / 人口 / 风险 / 机场铁路医院),按固定规则换算成 0–100,只有这 {CLIMATES.length} 个点,
+            图册没有对应的连续等值面。
           </p>
         )}
         <div className="mt-3">

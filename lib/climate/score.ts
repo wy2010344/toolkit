@@ -10,13 +10,13 @@
 import type { CityClimate, CityId, MonthlyTemp } from "./types";
 import { MONTHLY_ENV, type MonthlyEnv } from "./env";
 import { CLIMATES, climateOf } from "./cities";
-import { FACTS, type CityFacts } from "./archive";
+import { FACTS, URBAN, type CityFacts } from "./archive";
 import { computeStats } from "./stats";
 
 export type ClimateDim = "overall" | "summer" | "winter" | "sunny" | "dry" | "calm";
 
-/** 排行榜支持的排序维度:气候六项 + 三项规则换算的非气候指标。 */
-export type DimKey = ClimateDim | "cost" | "safety" | "convenience";
+/** 排行榜支持的排序维度:气候六项 + 规则换算的六项旅居事实指标。 */
+export type DimKey = ClimateDim | "cost" | "safety" | "convenience" | "courtyard" | "planting" | "market";
 
 const clamp = (x: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, x));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
@@ -111,10 +111,46 @@ export function convenienceScore(f: CityFacts): number {
   return clamp(40 + (f.airport ? 22 : 0) + (f.rail ? 18 : 0) + Math.min(20, f.hospitals * 6));
 }
 
+/**
+ * 院落可得性:想在院子里种花草,县城/小城比大城市容易得多,租金也低。
+ * 规模占 65%(城区人口分档,越少越容易租到带院农房),租金占 35%(复用 costScore)。
+ */
+export function courtyardScore(pop: number, rent: number): number {
+  const size = pop <= 8 ? 100 : pop <= 20 ? 92 : pop <= 50 ? 78 : pop <= 100 ? 60 : pop <= 300 ? 35 : 12;
+  return clamp(Math.round(size * 0.65 + costScore(rent) * 0.35));
+}
+
+/**
+ * 种植条件:露天种花草看三件事——无霜日、日照、年降水。
+ * 霜冻日越少越好(0–2 天满分),日照复用 sunScore 的年均,年降水 800–1400 mm 为最佳区间。
+ */
+export function plantingScore(env: MonthlyEnv[]): number {
+  const frostDays = env.reduce((s, e) => s + e.frost, 0);
+  const frostFit = frostDays <= 2 ? 100 : frostDays <= 10 ? lerp(100, 60, (frostDays - 2) / 8) : clamp(lerp(60, 0, (frostDays - 10) / 30));
+  const sunFit = env.reduce((s, e) => s + sunScore(e.sun), 0) / env.length;
+  const precip = env.reduce((s, e) => s + e.precip, 0);
+  const rainFit =
+    precip >= 800 && precip <= 1400
+      ? 100
+      : precip < 800
+        ? clamp(lerp(100, 30, (800 - precip) / 500))
+        : clamp(lerp(100, 30, (precip - 1400) / 800));
+  return clamp(Math.round(frostFit * 0.45 + sunFit * 0.3 + rainFit * 0.25));
+}
+
+/**
+ * 集市快递:城区人口决定快递网点、驿站与菜市场的密度,铁路与机场决定物流通达。
+ * 这是城市级代理——院落所在村组的具体网点、赶集日仍需实地核验。
+ */
+export function marketScore(pop: number, airport: boolean, rail: boolean): number {
+  const popPart = (Math.log10(pop) / Math.log10(1760)) * 55;
+  return clamp(Math.round(25 + popPart + (rail ? 12 : 0) + (airport ? 8 : 0)));
+}
+
 /* ---------- 权重 ---------- */
 
 /**
- * 十项要素的权重:气候七项 + 物价 / 安全 / 便利。
+ * 十三项要素的权重:气候七项 + 物价 / 安全 / 便利 + 院落 / 种植 / 集市。
  * 数值只需保持相对比例(界面上是 0–100 的滑块),合成前统一归一到合计 1。
  */
 export interface ComfortWeights {
@@ -128,11 +164,14 @@ export interface ComfortWeights {
   cost: number;
   safety: number;
   convenience: number;
+  courtyard: number;
+  planting: number;
+  market: number;
 }
 
 /**
- * 默认权重:气候占大头(气候七项合计 100),非气候合计 18,
- * 即默认综合分约 85% 看气候、15% 看物价 / 安全 / 便利。
+ * 默认权重:气候占大头(气候七项合计 100),六项旅居事实指标合计 40,
+ * 即默认综合分约 71% 看气候、29% 看物价 / 安全 / 便利 / 院落 / 种植 / 集市。
  */
 export const DEFAULT_WEIGHTS: ComfortWeights = {
   thermal: 38,
@@ -145,12 +184,27 @@ export const DEFAULT_WEIGHTS: ComfortWeights = {
   cost: 8,
   safety: 4,
   convenience: 6,
+  courtyard: 10,
+  planting: 6,
+  market: 6,
 };
 
 const weightSum = (w: ComfortWeights) =>
-  w.thermal + w.rain + w.humidity + w.wind + w.heat + w.frost + w.sun + w.cost + w.safety + w.convenience;
+  w.thermal +
+  w.rain +
+  w.humidity +
+  w.wind +
+  w.heat +
+  w.frost +
+  w.sun +
+  w.cost +
+  w.safety +
+  w.convenience +
+  w.courtyard +
+  w.planting +
+  w.market;
 
-/** 归一化全部十项;全为 0 时回落到默认,避免除零。 */
+/** 归一化全部十三项;全为 0 时回落到默认,避免除零。 */
 export function normalizedWeights(w: ComfortWeights): ComfortWeights {
   const sum = weightSum(w);
   if (sum <= 0) return normalizedWeights(DEFAULT_WEIGHTS);
@@ -165,6 +219,9 @@ export function normalizedWeights(w: ComfortWeights): ComfortWeights {
     cost: w.cost / sum,
     safety: w.safety / sum,
     convenience: w.convenience / sum,
+    courtyard: w.courtyard / sum,
+    planting: w.planting / sum,
+    market: w.market / sum,
   };
 }
 
@@ -275,6 +332,12 @@ export interface CityScore {
   safety: number;
   /** 便利 0–100,医疗与交通通达度。 */
   convenience: number;
+  /** 院落可得性 0–100,越高越容易租到带院农房。 */
+  courtyard: number;
+  /** 种植条件 0–100,无霜期、日照与年降水的综合。 */
+  planting: number;
+  /** 集市快递 0–100,快递网点与市场物流通达度。 */
+  market: number;
   /** 舒适度 ≥75 的月份数。 */
   goodMonths: number;
   /** 避暑:6–8 月舒适度均值。 */
@@ -336,16 +399,27 @@ export function scoreCity(
 
   const climateScore = avg((x) => x.score);
   const facts = FACTS[climate.id];
+  const scale = URBAN[climate.id];
   const cost = costScore(facts.rent);
   const safety = safetyScore(facts);
   const convenience = convenienceScore(facts);
+  const courtyard = courtyardScore(scale.pop, facts.rent);
+  const planting = plantingScore(env);
+  const market = marketScore(scale.pop, facts.airport, facts.rail);
 
-  // 综合分 = 气候分与非气候三项按归一后的权重加权;气候七项内部的归一已在 comfortOf 里做过。
+  // 综合分 = 气候分与六项事实指标按归一后的权重加权;气候七项内部的归一已在 comfortOf 里做过。
   const w = normalizedWeights(weights);
   const climateShare = w.thermal + w.rain + w.humidity + w.wind + w.heat + w.frost + w.sun;
   const overall =
     Math.round(
-      (climateScore * climateShare + cost * w.cost + safety * w.safety + convenience * w.convenience) * 10,
+      (climateScore * climateShare +
+        cost * w.cost +
+        safety * w.safety +
+        convenience * w.convenience +
+        courtyard * w.courtyard +
+        planting * w.planting +
+        market * w.market) *
+        10,
     ) / 10;
 
   const goodMonths = months.filter((x) => x.score >= 75).length;
@@ -374,6 +448,9 @@ export function scoreCity(
     cost,
     safety,
     convenience,
+    courtyard,
+    planting,
+    market,
     goodMonths,
     summer,
     winter,
@@ -465,6 +542,9 @@ export const DIMENSIONS: Array<{ key: DimKey; label: string; desc: string }> = [
   { key: "cost", label: "物价", desc: "房租中位数换算,越便宜越靠前(适合穷游)" },
   { key: "safety", label: "安全", desc: "按地震、台风、地质灾害风险扣分,越高越安心" },
   { key: "convenience", label: "便利", desc: "机场、铁路客运与三级医院按事实值折算" },
+  { key: "courtyard", label: "院落可得", desc: "小城 + 低租金,越容易租到带院农房越靠前" },
+  { key: "planting", label: "种植条件", desc: "无霜期、日照与年降水综合,适合露天种花草" },
+  { key: "market", label: "集市快递", desc: "城区人口与铁路机场折算的网点、物流密度" },
 ];
 
 /** 取单城评分的便捷方法。 */

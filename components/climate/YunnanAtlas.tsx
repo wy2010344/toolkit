@@ -330,7 +330,7 @@ export function YunnanAtlas({
         </h2>
         {noRaster && (
           <span className="text-[10.5px] leading-tight" style={{ color: C.lineStrong }}>
-            「{dimLabel}」来自城市事实值,无等值面,现显示综合宜居
+            「{dimLabel}」无等值面,图册仍显示综合宜居
           </span>
         )}
         <div className="flex items-center gap-2">
