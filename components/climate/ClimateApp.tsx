@@ -23,6 +23,7 @@ import { Toggle, cn } from "@/components/ui";
 import { TempBandChart } from "./TempBandChart";
 import { ComfortCalendar } from "./ComfortCalendar";
 import { RankView } from "./RankView";
+import { ScaleView } from "./ScaleView";
 import { CompareChart, LINE_COLORS, type CompareSeries, type Metric } from "./CompareChart";
 import type { MapPoint } from "./MapIndex";
 
@@ -46,7 +47,7 @@ const DOMAIN: [number, number] = (() => {
   return [lo, hi];
 })();
 
-type ViewMode = "band" | "compare" | "map" | "rank";
+type ViewMode = "band" | "compare" | "map" | "rank" | "scale";
 
 /** 城市行里的小型月均温折线,使用同一个 y 轴范围,便于列表内快速比较。 */
 function Spark({ months, domain }: { months: MonthlyTemp[]; domain: [number, number] }) {
@@ -212,6 +213,7 @@ export function ClimateApp() {
                 { v: "compare", label: "折线" },
                 { v: "map", label: "地图" },
                 { v: "rank", label: "推荐" },
+                { v: "scale", label: "规模" },
               ]}
             />
           </div>
@@ -294,6 +296,8 @@ export function ClimateApp() {
               )}
             </div>
           </div>
+        ) : view === "scale" ? (
+          <ScaleView selected={selected} onSelect={setSelected} />
         ) : (
         <div className="mx-auto max-w-3xl px-5 py-6 sm:px-8">
           {view === "band" ? (

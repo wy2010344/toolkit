@@ -6,6 +6,7 @@
 
 import { useMemo } from "react";
 import { CLIMATES } from "@/lib/climate/cities";
+import { URBAN } from "@/lib/climate/archive";
 import {
   DEFAULT_WEIGHTS,
   DIMENSIONS,
@@ -167,6 +168,9 @@ function Detail({ id, weights }: { id: CityId; weights: ComfortWeights }) {
           <span className="rounded-md bg-acc-blue-bg px-2 py-0.5 text-[11px] font-medium text-acc-blue-fg">{score.rainTag}</span>
           <span className="rounded-md bg-surface-mute px-2 py-0.5 text-[11px] text-muted">舒适月 {score.goodMonths}/12</span>
         </div>
+        <p className="mt-1.5 font-mono text-[10.5px] text-faint">
+          城区约 {URBAN[id].pop} 万人 · 建成区约 {URBAN[id].area} km²
+        </p>
 
         <div className="mt-3 grid grid-cols-3 gap-2">
           {dims.map((d) => {

@@ -83,6 +83,53 @@ export const FACTS: Record<CityId, CityFacts> = {
   xichang: { rent: 16, hospitals: 1, airport: true, rail: true, seismic: 2, typhoon: false, geoHazard: false },
 };
 
+/**
+ * 城市规模:城区口径的常住人口与建成区面积。
+ *
+ * ⚠️ 同样为人工整理的 2022–2023 年约值,只求量级正确,不做排名依据;口径是「城区」而非「市域」,
+ * 所以深圳、重庆用的是中心城区数,县城用的是县城建成区数。更新数据只需改这里。
+ */
+export interface CityScale {
+  /** 城区常住人口,万人。 */
+  pop: number;
+  /** 建成区面积,km²。 */
+  area: number;
+}
+
+export const URBAN: Record<CityId, CityScale> = {
+  kunming: { pop: 480, area: 430 },
+  yuxi: { pop: 45, area: 48 },
+  mengzi: { pop: 42, area: 40 },
+  puer: { pop: 32, area: 31 },
+  yongren: { pop: 6, area: 5 },
+  chongqing: { pop: 1050, area: 1000 },
+  shenzhen: { pop: 1760, area: 1210 },
+  qujing: { pop: 85, area: 95 },
+  xingyi: { pop: 52, area: 58 },
+  renhe: { pop: 22, area: 18 },
+  lincang: { pop: 28, area: 27 },
+  baoshan: { pop: 42, area: 46 },
+  gejiu: { pop: 30, area: 26 },
+  yuanyang: { pop: 6, area: 4 },
+  lvchun: { pop: 5, area: 3.5 },
+  honghe: { pop: 8, area: 5 },
+  mojiang: { pop: 13, area: 9 },
+  yuanjiang: { pop: 11, area: 9 },
+  dali: { pop: 62, area: 66 },
+  tengchong: { pop: 36, area: 40 },
+  chuxiong: { pop: 46, area: 52 },
+  chengjiang: { pop: 13, area: 12 },
+  tonghai: { pop: 19, area: 16 },
+  jianshui: { pop: 26, area: 23 },
+  shiping: { pop: 13, area: 11 },
+  mile: { pop: 31, area: 32 },
+  luxi: { pop: 16, area: 13 },
+  weishan: { pop: 11, area: 9 },
+  pingbian: { pop: 5, area: 4 },
+  jingdong: { pop: 9, area: 7 },
+  xichang: { pop: 72, area: 78 },
+};
+
 export const ARCHIVES: Record<CityId, CityArchive> = {
   kunming: {
     medical: "省会资源最强,三甲医院十余家(省一院、昆医附一院等)。",
