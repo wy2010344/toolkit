@@ -27,8 +27,8 @@ import { ScaleView } from "./ScaleView";
 import { CompareChart, LINE_COLORS, type CompareSeries, type Metric } from "./CompareChart";
 import type { MapPoint } from "./MapIndex";
 
-/** 图册数据量较大(等值线是预生成的折线),按需加载,不拖慢首屏。 */
-const YunnanAtlas = dynamic(() => import("./YunnanAtlas").then((m) => m.YunnanAtlas), {
+/** 图册数据量较大(每省等值线分别预生成),按需加载,不拖慢首屏。 */
+const Atlas = dynamic(() => import("./Atlas").then((m) => m.Atlas), {
   ssr: false,
   loading: () => <div className="flex h-full items-center justify-center text-[12px] text-faint">图册加载中…</div>,
 });
@@ -290,7 +290,7 @@ export function ClimateApp() {
             </div>
             <div className="relative min-h-0 flex-1">
               {mapMode === "atlas" ? (
-                <YunnanAtlas points={points} selectedId={selected} onSelect={setSelected} dim={dim} onDim={setDim} />
+                <Atlas points={points} selectedId={selected} onSelect={setSelected} dim={dim} onDim={setDim} />
               ) : (
                 <MapIndex points={points} selectedId={selected} onSelect={setSelected} />
               )}

@@ -5,7 +5,7 @@
  * 是不带数值的,读数得从旁边取。这里配套一个很小的二进制栅格:地图上任意一点
  * 的宜居度分项、海拔、1 月与 7 月均温,都能即时读出来。
  *
- * 数据由 scripts/build-yunnan-atlas.mjs 生成到 public/atlas/probe.bin:
+ * 数据由 scripts/build-atlas.mjs 生成到 public/atlas/每个省的 <省>-probe.bin:
  *   前 4 字节 = 头部 JSON 长度,其后是头部 JSON,再往后是二进制体。
  * 头部 JSON 描述网格尺寸与各字段的编码,客户端按它解析,不用把字段写死两遍。
  */
@@ -38,7 +38,7 @@ export interface Probe {
 }
 
 /** 加载并解析探针数据。 */
-export async function loadProbe(url = "/atlas/probe.bin"): Promise<Probe> {
+export async function loadProbe(url = "/atlas/yunnan-probe.bin"): Promise<Probe> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`探针数据加载失败:HTTP ${res.status}`);
   const buf = await res.arrayBuffer();

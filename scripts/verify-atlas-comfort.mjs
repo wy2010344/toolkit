@@ -29,7 +29,7 @@ for (const k of ["cOverall", "cSummer", "cWinter", "cSunny", "cDry", "cCalm"]) {
 }
 
 console.log("— 探针解码 —");
-const buf = fs.readFileSync(path.join(ROOT, "public/atlas/probe.bin"));
+const buf = fs.readFileSync(path.join(ROOT, "public/atlas/yunnan-probe.bin"));
 const jsonLen = buf.readUInt32LE(0);
 const meta = JSON.parse(buf.subarray(4, 4 + jsonLen).toString("utf8"));
 const body = buf.subarray(4 + jsonLen);
