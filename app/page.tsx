@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { GitDiff, Atom, FlowArrow, Waveform, Thermometer } from "@phosphor-icons/react/dist/ssr";
+import { GitDiff, Atom, FlowArrow, Waveform, Thermometer, TreeStructure } from "@phosphor-icons/react/dist/ssr";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -18,6 +18,12 @@ const TOOLS: {
     name: "旅居气候对比",
     desc: "把宜居度画成整幅云南的连续等值面,鼠标移到任意位置即可读出气温与分数;另有 31 座候选城市的单城温度带、多城折线与偏好排行。",
     icon: <Thermometer size={22} />,
+  },
+  {
+    href: "/tools/chat-tree",
+    name: "对话树 · 追问回溯",
+    desc: "把每一次提问画成树上的节点,同一提问下的分支追加并列保留;图可缩放平移,点节点在右侧看回答,单条追问链可单独回溯与导出。",
+    icon: <TreeStructure size={22} />,
   },
   {
     href: "/tools/llm-lab",

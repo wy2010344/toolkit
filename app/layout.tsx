@@ -20,7 +20,7 @@ export const metadata: Metadata = {
     default: "工具箱",
     template: "%s · 工具箱",
   },
-  description: "手写的交互式小工具合集:LLM 原理实验室、DFT 听音室、旅居气候对比、流程图编辑器、目录对比同步。浏览器里实时可玩。",
+  description: "手写的交互式小工具合集:对话树追问回溯、LLM 原理实验室、DFT 听音室、旅居气候对比、流程图编辑器、目录对比同步。浏览器里实时可玩。",
   openGraph: {
     title: "工具箱",
     description: "手写的交互式小工具合集,浏览器里实时可玩。",
