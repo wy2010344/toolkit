@@ -2,25 +2,27 @@
  * 旅居气候对比主界面。
  * 四种视图:
  *   ① 地图图册 —— 默认视图。把「宜居度」画成云南全境的连续等值面,鼠标移到任意位置即可读数;
- *   ② 单城温度带 —— 选一座城市,看 12 个月最低温→最高温的色带与月均温折线;
- *   ③ 多城折线对比 —— 勾选任意多座城市(可一个都不选),同屏叠折线,指标可切换最高 / 平均 / 最低温;
+ *   ② 单城气候带 —— 选一座城市,看 12 个月最低温→最高温的色带与月均温折线,以及 x 轴对齐的逐月相对湿度;
+ *   ③ 多城折线对比 —— 勾选任意多座城市(可一个都不选),同屏叠折线,指标可切换最高 / 平均 / 最低温与相对湿度;
  *   ④ 推荐排行 —— 按偏好维度给全部城市排序,看选中城市的逐月舒适度日历。
- * 温度带与折线的 y 轴范围由全部城市一次性算出并固定,两视图共用,切换时可直接横向对照。
+ * 温度带与气温折线的 y 轴范围由全部城市一次性算出并固定,两视图共用;湿度另用一套固定范围,
+ * 切换指标时互不挤压。气温是 30 年口径、湿度是近 3 年口径,界面各处均单独标注、不可混算。
  */
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { Check } from "@phosphor-icons/react/dist/ssr";
 import { CLIMATES, climateOf } from "@/lib/climate/cities";
 import { ARCHIVES, ARCHIVE_FIELDS } from "@/lib/climate/archive";
 import { computeStats } from "@/lib/climate/stats";
-import { MONTHLY_ENV, ENV_PERIOD } from "@/lib/climate/env";
+import { MONTHLY_ENV, ENV_PERIOD, HUM_COMFORT_BAND } from "@/lib/climate/env";
 import { MONTHLY_PM25, PM25_PERIOD } from "@/lib/climate/air";
 import { DEFAULT_WEIGHTS, scoreOf, type ComfortWeights, type DimKey } from "@/lib/climate/score";
 import type { CityId, MonthlyTemp } from "@/lib/climate/types";
 import { Toggle, cn } from "@/components/ui";
 import { TempBandChart } from "./TempBandChart";
+import { HumidityChart } from "./HumidityChart";
 import { ComfortCalendar } from "./ComfortCalendar";
 import { RankView } from "./RankView";
 import { ScaleView } from "./ScaleView";
@@ -44,6 +46,14 @@ const DOMAIN: [number, number] = (() => {
   const vals = CLIMATES.flatMap((c) => c.months.flatMap((m) => [m.min, m.max]));
   const lo = Math.floor((Math.min(...vals) - 1) / 5) * 5;
   const hi = Math.ceil((Math.max(...vals) + 1) / 5) * 5;
+  return [lo, hi];
+})();
+
+/** 湿度 y 轴:同样由全部城市一次性算出并固定(向外取整到 10 的倍数),单城与多城共用。 */
+const HUM_DOMAIN: [number, number] = (() => {
+  const vals = Object.values(MONTHLY_ENV).flatMap((rows) => rows.map((r) => r.hum));
+  const lo = Math.floor((Math.min(...vals) - 2) / 10) * 10;
+  const hi = Math.ceil((Math.max(...vals) + 2) / 10) * 10;
   return [lo, hi];
 })();
 
@@ -71,22 +81,24 @@ function Segmented<T extends string>({
 }: {
   value: T;
   onChange: (v: T) => void;
-  options: Array<{ v: T; label: string }>;
+  options: Array<{ v: T; label: string; divider?: boolean }>;
 }) {
   return (
-    <div className="inline-flex flex-wrap rounded-lg border border-line bg-surface-mute/60 p-0.5">
+    <div className="inline-flex flex-wrap items-center rounded-lg border border-line bg-surface-mute/60 p-0.5">
       {options.map((o) => (
-        <button
-          key={o.v}
-          type="button"
-          onClick={() => onChange(o.v)}
-          className={cn(
-            "rounded-[6px] px-2.5 py-1 text-[12px] font-medium transition-colors",
-            value === o.v ? "bg-surface text-ink shadow-sm" : "text-muted hover:text-ink",
-          )}
-        >
-          {o.label}
-        </button>
+        <Fragment key={o.v}>
+          {o.divider && <span aria-hidden className="mx-0.5 h-4 w-px shrink-0 bg-line-strong" />}
+          <button
+            type="button"
+            onClick={() => onChange(o.v)}
+            className={cn(
+              "rounded-[6px] px-2.5 py-1 text-[12px] font-medium transition-colors",
+              value === o.v ? "bg-surface text-ink shadow-sm" : "text-muted hover:text-ink",
+            )}
+          >
+            {o.label}
+          </button>
+        </Fragment>
       ))}
     </div>
   );
@@ -156,10 +168,21 @@ export function ClimateApp() {
     () => (showRef ? CLIMATES.filter((c) => c.id !== city.id).map((c) => c.months) : []),
     [city, showRef],
   );
+  /** 湿度图与气温带共用同一个「其他城市参考线」开关。 */
+  const envRefs = useMemo(
+    () => (showRef ? CLIMATES.filter((c) => c.id !== city.id).map((c) => MONTHLY_ENV[c.id]) : []),
+    [city, showRef],
+  );
 
-  // 对比序列按 CLIMATES 顺序取,保证同一城市配色稳定。
+  // 对比序列按 CLIMATES 顺序取,保证同一城市配色稳定;env 为近 3 年湿度序列。
   const series: CompareSeries[] = useMemo(
-    () => CLIMATES.filter((c) => picked.includes(c.id)).map((c) => ({ id: c.id, name: c.name, months: c.months })),
+    () =>
+      CLIMATES.filter((c) => picked.includes(c.id)).map((c) => ({
+        id: c.id,
+        name: c.name,
+        months: c.months,
+        env: MONTHLY_ENV[c.id],
+      })),
     [picked],
   );
   const colorIndexOf = (id: CityId) => series.findIndex((s) => s.id === id);
@@ -184,6 +207,11 @@ export function ClimateApp() {
   const togglePick = (id: CityId) =>
     setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
 
+  // 湿度摘要:与气温指标并列展示,但口径为近 3 年,标签里直接写明避免混算。
+  const humVals = MONTHLY_ENV[city.id].map((e) => e.hum);
+  const annualHum = humVals.reduce((s, v) => s + v, 0) / humVals.length;
+  const humRange = Math.max(...humVals) - Math.min(...humVals);
+
   const chips = [
     { label: "全年均温", value: `${stats.annualMean.toFixed(1)}°` },
     { label: "最热月", value: `${stats.hottest.m}月 ${stats.hottest.mean.toFixed(1)}°` },
@@ -193,6 +221,8 @@ export function ClimateApp() {
     { label: "宜居月数", value: `${stats.livableMonths} 个月` },
     { label: "避暑指数", value: `${stats.summerIndex.toFixed(1)}°` },
     { label: "避寒指数", value: `${stats.winterIndex.toFixed(1)}°` },
+    { label: "年均湿度 · 近3年", value: `${annualHum.toFixed(0)}%` },
+    { label: "湿度极差 · 近3年", value: `${humRange.toFixed(0)}%` },
   ];
 
   const archive = ARCHIVES[city.id];
@@ -321,7 +351,11 @@ export function ClimateApp() {
                 <TempBandChart months={city.months} domain={DOMAIN} reference={refs} />
               </section>
 
-              <section className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <section className="mt-4 rounded-xl border border-line bg-surface p-4">
+                <HumidityChart env={MONTHLY_ENV[city.id]} domain={HUM_DOMAIN} reference={envRefs} />
+              </section>
+
+              <section className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
                 {chips.map((c) => (
                   <div key={c.label} className="rounded-lg border border-line bg-surface px-3 py-2">
                     <div className="text-[10.5px] text-faint">{c.label}</div>
@@ -330,7 +364,7 @@ export function ClimateApp() {
                 ))}
               </section>
               <p className="mt-1.5 text-[10.5px] leading-relaxed text-faint">
-                宜居月数 = 月均温落在 15–25 ℃ 的月份数;避暑指数 = 6–8 月平均月均温(越低越凉);避寒指数 = 12、1、2 月平均月均温(越高越暖)。
+                宜居月数 = 月均温落在 15–25 ℃ 的月份数;避暑指数 = 6–8 月平均月均温(越低越凉);避寒指数 = 12、1、2 月平均月均温(越高越暖)。湿度两项 = 逐月相对湿度的年均与最大月减最小月,为 2023–2025 近 3 年口径,与 30 年气温指标不可混算。
               </p>
 
               <ComfortCalendar score={score} />
@@ -378,7 +412,7 @@ export function ClimateApp() {
               </section>
 
               <p className="mt-4 text-[10.5px] leading-relaxed text-faint">
-                数据:Open-Meteo 历史天气接口(ERA5 再分析),1995–2024 年逐日气温按自然月求平均;各地取市区代表点,海拔越高通常越凉。
+                数据:Open-Meteo 历史天气接口(ERA5 再分析)。气温为 1995–2024 年逐日值按自然月求平均;相对湿度、体感、降水等环境量为 2023–2025 近 3 年逐日聚合,两组口径不同不可直接混算。各地取市区代表点,海拔越高通常越凉。
               </p>
             </>
           ) : (
@@ -393,20 +427,25 @@ export function ClimateApp() {
                       { v: "max", label: "最高温" },
                       { v: "mean", label: "平均温" },
                       { v: "min", label: "最低温" },
+                      { v: "hum", label: "湿度", divider: true },
                     ]}
                   />
                 </div>
                 <p className="mt-1.5 text-[13px] leading-relaxed text-faint">
-                  在左侧勾选城市同屏对比,可多选也可一个都不选;每条折线线尾标注城市名,并可在上方切换指标。
+                  {metric === "hum"
+                    ? `在左侧勾选城市同屏对比逐月相对湿度,浅色带是 ${HUM_COMFORT_BAND[0]}–${HUM_COMFORT_BAND[1]}% 的舒适区间;湿度为 2023–2025 近 3 年口径,与 30 年气温不可直接混算。`
+                    : "在左侧勾选城市同屏对比,可多选也可一个都不选;每条折线线尾标注城市名,并可在上方切换温度指标或切到湿度维度。"}
                 </p>
               </header>
 
               <section className="rounded-xl border border-line bg-surface p-4">
-                <CompareChart series={series} domain={DOMAIN} metric={metric} />
+                <CompareChart series={series} domain={metric === "hum" ? HUM_DOMAIN : DOMAIN} metric={metric} />
               </section>
 
               <p className="mt-4 text-[10.5px] leading-relaxed text-faint">
-                数据:Open-Meteo 历史天气接口(ERA5 再分析),1995–2024 年逐日气温按自然月求平均;各地取市区代表点,海拔越高通常越凉。
+                {metric === "hum"
+                  ? "数据:Open-Meteo 历史天气接口(ERA5 再分析),逐日 relative_humidity_2m_mean 按自然月求平均,2023–2025 共 3 年;气温为 1995–2024 共 30 年口径,两者不同不可直接混算。"
+                  : "数据:Open-Meteo 历史天气接口(ERA5 再分析),1995–2024 年逐日气温按自然月求平均;各地取市区代表点,海拔越高通常越凉。"}
               </p>
             </>
           )}

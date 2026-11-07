@@ -12,6 +12,7 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEven
 import type { AtlasModule } from "@/lib/climate/atlas";
 import { FAULTS, QUAKES } from "@/lib/climate/atlas/faults";
 import { loadProbe, type Probe } from "@/lib/climate/atlas/probe";
+import { HUM_COMFORT_BAND } from "@/lib/climate/env";
 import type { DimKey } from "@/lib/climate/score";
 import type { CityId } from "@/lib/climate/types";
 import type { MapPoint } from "./MapIndex";
@@ -222,8 +223,12 @@ export function AtlasCombined({
     setProbe(null);
   };
 
-  const probeValue = probe ? (probe.v[sel] ?? probe.v.cOverall ?? 0) : 0;
-  const probeLabel = COMFORT_DIM[sel] ? (activeMeta?.label ?? "") : "综合宜居";
+  /** 当前专题在探针里有值就用它自己的单位 / 标签,否则回落到综合宜居分。 */
+  const hasFieldValue = probe ? probe.v[sel] !== undefined : false;
+  const probeValue = probe ? (hasFieldValue ? probe.v[sel] : (probe.v.cOverall ?? 0)) : 0;
+  const probeLabel = hasFieldValue ? (activeMeta?.label ?? "综合宜居") : "综合宜居";
+  const probeUnit = hasFieldValue ? (activeMeta?.unit ?? "分") : "分";
+  const probeDecimals = probeUnit === "℃" ? 1 : 0;
 
   const levels = frames[0]?.m.FIELD_LEVELS[sel] ?? [];
   const bands = frames[0]?.m.BAND_COLORS[sel] ?? [];
@@ -413,11 +418,11 @@ export function AtlasCombined({
           }}
         >
           <div className="flex items-baseline gap-1">
-            <span className="font-mono text-[16px] font-semibold" style={{ color: C.comfort }}>
-              {probeValue.toFixed(0)}
+            <span className="font-mono text-[16px] font-semibold" style={{ color: groupColor }}>
+              {probeValue.toFixed(probeDecimals)}
             </span>
             <span className="text-[10px]" style={{ color: C.label }}>
-              分 · {probeLabel}
+              {probeUnit} · {probeLabel}
             </span>
           </div>
           <div className="mt-0.5 whitespace-nowrap font-mono text-[9.5px]" style={{ color: C.lineStrong }}>
@@ -426,6 +431,11 @@ export function AtlasCombined({
           <div className="mt-0.5 whitespace-nowrap font-mono text-[9.5px]" style={{ color: C.lineStrong }}>
             避暑 {probe.v.cSummer.toFixed(0)} · 避寒 {probe.v.cWinter.toFixed(0)} · 少雨 {probe.v.cDry.toFixed(0)}
           </div>
+          {probe.v.hYear !== undefined && (
+            <div className="mt-0.5 whitespace-nowrap font-mono text-[9.5px]" style={{ color: C.hum }}>
+              湿度 年 {Math.round(probe.v.hYear)}% · 雨季 {Math.round(probe.v.hWet ?? 0)}% · 干季 {Math.round(probe.v.hDry ?? 0)}%
+            </div>
+          )}
         </div>
       )}
 
@@ -461,6 +471,12 @@ export function AtlasCombined({
               <circle cx="8" cy="5" r="3.4" fill={C.comfort} stroke={C.paper} strokeWidth="1" />
             </svg>
             <span className="text-[9.5px]">圆点与数字 = 该城本维度得分</span>
+          </div>
+        )}
+
+        {group === "hum" && (
+          <div className="mt-1.5 text-[9.5px] leading-tight" style={{ color: C.lineStrong }}>
+            {HUM_COMFORT_BAND[0]}–{HUM_COMFORT_BAND[1]}% 为舒适度模型的最佳湿度区间
           </div>
         )}
 

@@ -1,8 +1,8 @@
 /**
  * 多省等值线图册。
  *
- * 不按行政区划着色,而是把「数据的界线」画出来:等高线、等温线、等降水线、人口等值线、
- * 断裂带与历史震中(仅云南),以及最重要的一层——**连续宜居度面**。
+ * 不按行政区划着色,而是把「数据的界线」画出来:等高线、等温线、等降水线、等湿度线、
+ * 人口等值线、断裂带与历史震中(仅云南),以及最重要的一层——**连续宜居度面**。
  *
  * 宜居度不是孤立的城市分数,而是被铺到整幅省域的栅格上:逐月把气象要素插值成面,
  * 气温按直减率扣除地形影响,高温日与霜冻日由站点标定的单调曲线随气温反推,
@@ -18,6 +18,7 @@ import type { AtlasModule, AtlasProvince } from "@/lib/climate/atlas";
 import { ATLAS_PROVINCES, loadAtlasData } from "@/lib/climate/atlas";
 import { FAULTS, QUAKES } from "@/lib/climate/atlas/faults";
 import { loadProbe, type Probe } from "@/lib/climate/atlas/probe";
+import { HUM_COMFORT_BAND } from "@/lib/climate/env";
 import { scoreAll, DIMENSIONS, type DimKey } from "@/lib/climate/score";
 import type { CityId } from "@/lib/climate/types";
 import type { MapPoint } from "./MapIndex";
@@ -247,13 +248,17 @@ export function Atlas({
     setProbe({ cx, cy, flip: cx > cr.width - 190, v });
   };
 
-  const probeLabel = layerDim ? (atlas?.FIELD_META[sel]?.label ?? "") : "综合宜居";
   /**
-   * 探针二进制里存的是 cOverall / cSummer 这类字段键,而 layerDim 是评分模型的维度键
-   * (overall / summer ...),两者不是一套命名,直接用 layerDim 索引会拿到 undefined。
-   * 所以当前图层直接按 sel(字段键)取;非宜居图层再回落到综合分。
+   * 探针二进制里存的是字段键(cOverall / hYear / tJan ...),而 layerDim 是评分模型的
+   * 维度键(overall / summer ...),两者不是一套命名,直接用 layerDim 索引会拿到 undefined。
+   * 当前图层有探针字段时按该字段读,并配上该专题的单位与标签;没有(地势 / 地震 / 人口等)
+   * 就回落到综合宜居分,避免出现「8.2 分 · 1 月均温」这类单位错配。
    */
-  const probeValue = probe ? (probe.v[sel] ?? probe.v.cOverall ?? 0) : 0;
+  const hasFieldValue = probe ? probe.v[sel] !== undefined : false;
+  const probeValue = probe ? (hasFieldValue ? probe.v[sel] : (probe.v.cOverall ?? 0)) : 0;
+  const probeLabel = hasFieldValue ? (meta?.label ?? "综合宜居") : "综合宜居";
+  const probeUnit = hasFieldValue ? (meta?.unit ?? "分") : "分";
+  const probeDecimals = probeUnit === "℃" ? 1 : 0;
 
   if (mode === "all" ? !allMods : !atlas || !project) {
     return (
@@ -500,11 +505,11 @@ export function Atlas({
             }}
           >
             <div className="flex items-baseline gap-1">
-              <span className="font-mono text-[16px] font-semibold" style={{ color: C.comfort }}>
-                {probeValue.toFixed(0)}
+              <span className="font-mono text-[16px] font-semibold" style={{ color }}>
+                {probeValue.toFixed(probeDecimals)}
               </span>
               <span className="text-[10px]" style={{ color: C.label }}>
-                分 · {probeLabel}
+                {probeUnit} · {probeLabel}
               </span>
             </div>
             <div className="mt-0.5 whitespace-nowrap font-mono text-[9.5px]" style={{ color: C.lineStrong }}>
@@ -513,6 +518,11 @@ export function Atlas({
             <div className="mt-0.5 whitespace-nowrap font-mono text-[9.5px]" style={{ color: C.lineStrong }}>
               避暑 {probe.v.cSummer.toFixed(0)} · 避寒 {probe.v.cWinter.toFixed(0)} · 少雨 {probe.v.cDry.toFixed(0)}
             </div>
+            {probe.v.hYear !== undefined && (
+              <div className="mt-0.5 whitespace-nowrap font-mono text-[9.5px]" style={{ color: C.hum }}>
+                湿度 年 {Math.round(probe.v.hYear)}% · 雨季 {Math.round(probe.v.hWet ?? 0)}% · 干季 {Math.round(probe.v.hDry ?? 0)}%
+              </div>
+            )}
           </div>
         )}
 
@@ -534,15 +544,18 @@ export function Atlas({
                 ))}
               </div>
               <div className="relative mt-1 h-3">
-                {(atlas.FIELD_LEVELS[sel] ?? []).map((v, i) => (
-                  <span
-                    key={v}
-                    className="absolute -translate-x-1/2 font-mono text-[9px]"
-                    style={{ left: `${((i + 1) / bandColors.length) * 100}%`, color: C.lineStrong }}
-                  >
-                    {v}
-                  </span>
-                ))}
+                {(atlas.FIELD_LEVELS[sel] ?? []).map((v, i, arr) =>
+                  // 湿度档位较密,隔档标注才不会在 182px 宽的图例里互相压住。
+                  arr.length <= 8 || i === arr.length - 1 || i % 3 === 0 ? (
+                    <span
+                      key={v}
+                      className="absolute -translate-x-1/2 font-mono text-[9px]"
+                      style={{ left: `${((i + 1) / bandColors.length) * 100}%`, color: C.lineStrong }}
+                    >
+                      {v}
+                    </span>
+                  ) : null,
+                )}
               </div>
               <div className="text-right font-mono text-[9px]" style={{ color: C.lineStrong }}>
                 {meta.unit}
@@ -556,6 +569,12 @@ export function Atlas({
                 <circle cx="8" cy="5" r="3.4" fill={bandColorOf(atlas, sel, (atlas.FIELD_META[sel]?.min ?? 0) + (atlas.FIELD_META[sel]?.step ?? 5))} stroke={C.paper} strokeWidth="1" />
               </svg>
               <span className="text-[9.5px]">圆点与数字 = 该城本维度得分</span>
+            </div>
+          )}
+
+          {group === "hum" && (
+            <div className="mt-1.5 text-[9.5px] leading-tight" style={{ color: C.lineStrong }}>
+              {HUM_COMFORT_BAND[0]}–{HUM_COMFORT_BAND[1]}% 为舒适度模型的最佳湿度区间
             </div>
           )}
 
@@ -629,6 +648,12 @@ export function Atlas({
             {mode === "all" ? "五省拼合图共用同一套宜居模型与同一套色阶," : ""}
             宜居度面与右侧榜单同一套模型:逐月把均温、湿度、雨日、日照、大风插值成栅格(气温按 0.65 ℃/100 m 直减率扣除地形影响),
             「&gt;30 ℃ 天数」「霜冻天数」由站点标定的单调曲线随当地气温反推,再逐像元合成 0–100 分。移动鼠标可读出任意位置的读数。
+          </>
+        ) : group === "hum" ? (
+          <>
+            等湿度线由 {refAtlas?.STATION_COUNT} 个站点 2023–2025 年逐月相对湿度(ERA5,relative_humidity_2m_mean)插值成面,
+            分全年 / 雨季(5–10 月)/ 干季(11–4 月);与宜居度评分用的是同一份湿度场,{HUM_COMFORT_BAND[0]}–{HUM_COMFORT_BAND[1]}% 为模型的最佳区间。
+            气温专题为 1995–2024 共 30 年口径,两组数据不同,不可直接混算。
           </>
         ) : (
           <>

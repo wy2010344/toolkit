@@ -16,6 +16,12 @@ import type { CityId } from "./types";
 /** 环境变量的时间口径说明。 */
 export const ENV_PERIOD = "2023–2025 共 3 年,逐日聚合后按年平均";
 
+/**
+ * 相对湿度舒适区间(%),与 ./score.ts 的 humidity() 评分口径一致(40–65 % 最佳,
+ * 高于 80 % 开始明显扣分)。折线对比图与单城湿度图共用这条带做背景参照。
+ */
+export const HUM_COMFORT_BAND: [number, number] = [40, 65];
+
 /** 单个自然月的环境与舒适度均值。 */
 export interface MonthlyEnv {
   /** 月份,1–12。 */

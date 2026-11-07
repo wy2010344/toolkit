@@ -6,8 +6,9 @@
  *   ② 等温线 —— 用省内及邻近站点的一月/七月/年均气温做反距离加权插值,并按气温直减率
  *      扣除高程影响,再叠加 DEM 高程场,于是等温线会沿河谷与山脊弯折,和真实等温线一致;
  *   ③ 等降水线 —— 同样的插值,分全年 / 雨季(5–10 月)/ 干季(11–4 月);
- *   ④ 人口等值线 —— 该省各州市驻地的人口规模插值;
- *   ⑤ 宜居度面 —— 逐像元调用 score.ts 的 comfortOf(),与榜单同一套模型。
+ *   ④ 等湿度线 —— 复用逐月相对湿度场,同样分全年 / 雨季 / 干季,与宜居度模型同源;
+ *   ⑤ 人口等值线 —— 该省各州市驻地的人口规模插值;
+ *   ⑥ 宜居度面 —— 逐像元调用 score.ts 的 comfortOf(),与榜单同一套模型。
  * 站点数据直接读项目里的 TS 模块,不另抄一份。
  *
  * 输出(每省一套):
@@ -1076,6 +1077,8 @@ function buildField(key, field, levels, coarse, dsOverride) {
 const RAMPS = {
   temp: ["#2f5f9e", "#5d8ab8", "#9dc0d8", "#e6e0cf", "#efc793", "#dc8a5b", "#b8452f"],
   rain: ["#e6eef0", "#c6dce6", "#9dc3d6", "#6b9fbe", "#3f76a0", "#1d4a73"],
+  // 湿度:干燥偏暖褐,湿润偏蓝,中间过纸白色,与等降水线的蓝色不混淆。
+  hum: ["#b0814f", "#cfa872", "#e0d3ad", "#d9ddd0", "#a9c9cf", "#6b9fbc", "#2f6f96"],
   pop: ["#e9e0ea", "#d3c2da", "#bda5c9", "#a184b3", "#7f6098", "#5b3f76"],
   // 宜居度:低分偏暖褐(不宜),高分偏墨绿(宜居),中间过黄。
   comfort: ["#9c4b3f", "#bf7048", "#d69f63", "#d7c98c", "#b3c57c", "#7aa467", "#3f7f55"],
@@ -1220,6 +1223,35 @@ const rainD = envRaw.slice(12, 24);
 const sunH = envRaw.slice(24, 36);
 const windD = envRaw.slice(36, 48);
 
+/**
+ * 湿度专题面:把若干个月的逐格相对湿度取平均,得到全年 / 雨季 / 干季三张栅格。
+ * 雨季口径与等降水线保持一致(5–10 月,索引 4–9),干季为其余六个月。
+ * 这些栅格本来就是舒适度模型的输入,直接复用,不额外引入数据源。
+ */
+const meanHum = (idx) => {
+  const out = new Float32Array(CW * CH).fill(-9999);
+  for (let k = 0; k < out.length; k++) {
+    let sum = 0;
+    let ok = true;
+    for (const m of idx) {
+      const v = hum[m][k];
+      if (v < -1000) {
+        ok = false;
+        break;
+      }
+      sum += v;
+    }
+    out[k] = ok ? sum / idx.length : -9999;
+  }
+  return out;
+};
+const ALL_MONTHS = Array.from({ length: 12 }, (_, i) => i);
+const WET_MONTHS = [4, 5, 6, 7, 8, 9];
+const DRY_MONTHS = [10, 11, 0, 1, 2, 3];
+const hYear = meanHum(ALL_MONTHS);
+const hWet = meanHum(WET_MONTHS);
+const hDry = meanHum(DRY_MONTHS);
+
 /* ③ 计数类要素由气温反推。 */
 const hotCurve = monotoneCurve(stations.flatMap((p) => p.tMax.map((t, m) => [t, p.hot30[m]])));
 const frostCurve = monotoneCurve(stations.flatMap((p) => p.tMin.map((t, m) => [-t, p.frost[m]])));
@@ -1319,6 +1351,9 @@ const PROBE_FIELDS = [
   { key: "elev", type: "u16", scale: 1, label: "海拔", unit: "m" },
   { key: "tJan", type: "i16", scale: 0.1, label: "1 月均温", unit: "℃" },
   { key: "tJul", type: "i16", scale: 0.1, label: "7 月均温", unit: "℃" },
+  { key: "hYear", type: "u8", scale: 1, label: "年均湿度", unit: "%" },
+  { key: "hWet", type: "u8", scale: 1, label: "雨季湿度", unit: "%" },
+  { key: "hDry", type: "u8", scale: 1, label: "干季湿度", unit: "%" },
 ];
 const PROBE_BYTES = { u8: 1, u16: 2, i16: 2 };
 {
@@ -1337,7 +1372,10 @@ const PROBE_BYTES = { u8: 1, u16: 2, i16: 2 };
         else if (f.key === "elev") raw = Math.max(0, Math.min(65535, Math.round(demC[k])));
         else if (f.key === "tJan") raw = tM[0][k] < -1000 ? 0 : Math.round(tM[0][k] / f.scale);
         else if (f.key === "tJul") raw = tM[6][k] < -1000 ? 0 : Math.round(tM[6][k] / f.scale);
-        else raw = Math.max(0, Math.min(100, Math.round(comfort[f.key][k])));
+        else if (f.key === "hYear" || f.key === "hWet" || f.key === "hDry") {
+          const src = f.key === "hYear" ? hYear : f.key === "hWet" ? hWet : hDry;
+          raw = src[k] < -1000 ? 0 : Math.max(0, Math.min(255, Math.round(src[k])));
+        } else raw = Math.max(0, Math.min(100, Math.round(comfort[f.key][k])));
         // 注意:16 位字段要占两个字节,偏移得显式 +2,不能靠 off++。
         if (f.type === "u8") {
           bin.writeUInt8(raw, off);
@@ -1380,6 +1418,10 @@ const fields = [
   { key: "pYear", group: "rain", label: "年降水量", unit: "mm", coarse: 12, levels: levelsOf(1000, 2800, 200) },
   { key: "pWet", group: "rain", label: "雨季降水", unit: "mm", coarse: 12, levels: levelsOf(750, 1800, 150) },
   { key: "pDry", group: "rain", label: "干季降水", unit: "mm", coarse: 12, levels: levelsOf(150, 1350, 150) },
+  // 湿度在省内的起伏比气温 / 降水小得多(广东年均只有 5 个百分点),档位取 2.5% 才有足够的等值线。
+  { key: "hYear", group: "hum", label: "年均湿度", unit: "%", coarse: 4, levels: levelsOf(58, 86, 2.5) },
+  { key: "hWet", group: "hum", label: "雨季湿度", unit: "%", coarse: 4, levels: levelsOf(68, 88, 2.5) },
+  { key: "hDry", group: "hum", label: "干季湿度", unit: "%", coarse: 4, levels: levelsOf(46, 84, 2.5) },
   { key: "pop", group: "pop", label: "人口规模", unit: "万人", coarse: 9, levels: levelsOf(200, 2000, 200) },
   { key: "cOverall", group: "comfort", label: "综合宜居", unit: "分", coarse: 4, levels: levelsOf(40, 95, 5) },
   { key: "cSummer", group: "comfort", label: "避暑", unit: "分", coarse: 4, levels: levelsOf(35, 90, 5) },
@@ -1389,14 +1431,16 @@ const fields = [
   { key: "cCalm", group: "comfort", label: "怕风", unit: "分", coarse: 4, levels: levelsOf(65, 100, 5) },
 ];
 
-const fieldGridRef = { tJan, tJul, tYear, pYear, pWet, pDry, pop, ...comfort };
+const fieldGridRef = { tJan, tJul, tYear, pYear, pWet, pDry, hYear, hWet, hDry, pop, ...comfort };
 const fieldData = {};
 const fieldBands = {};
 const fieldLevels = {};
 for (const f of fields) {
-  const isComfort = f.group === "comfort";
+  // 宜居度面与湿度面本来就在粗网格(CW×CH)上算好,直接喂给等值线 / 分层设色,
+  // 不能再按 coarse 降采样一次,否则会与探针读数和舒适度模型错位。
+  const isCoarseGrid = f.group === "comfort" || f.group === "hum";
   const gridRef = fieldGridRef[f.key];
-  const dsOverride = isComfort ? { data: gridRef, w: CW, h: CH, mask: maskC } : undefined;
+  const dsOverride = isCoarseGrid ? { data: gridRef, w: CW, h: CH, mask: maskC } : undefined;
   fieldData[f.key] = buildField(f.key, gridRef, f.levels, f.coarse, dsOverride);
   fieldBands[f.key] = writeFieldImage(f, gridRef, dsOverride);
   fieldLevels[f.key] = f.levels;

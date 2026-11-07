@@ -1,11 +1,14 @@
 /**
- * 多城气温折线对比图。
- * 每座选中的城市画一条折线(指标可在最高 / 平均 / 最低温之间切换),线尾标注城市名并配图例;
- * y 轴温度范围由外部传入且与单城带图一致,便于同屏横向对照。允许一个城市都不选。
+ * 多城气候折线对比图。
+ * 每座选中的城市画一条折线,指标可在最高 / 平均 / 最低温与相对湿度之间切换;
+ * 线尾标注城市名并配图例,悬停可读出同月各城数值。允许一个城市都不选。
+ * 温度与湿度各用一套固定的 y 轴范围(外部传入),切换指标时互不挤压,同屏可横向对照。
+ * 注意:气温为 1995–2024 共 30 年口径,湿度为 2023–2025 近 3 年口径,图上单独标注不可混算。
  */
 "use client";
 
 import { useState, type MouseEvent } from "react";
+import { HUM_COMFORT_BAND, type MonthlyEnv } from "@/lib/climate/env";
 import type { MonthlyTemp } from "@/lib/climate/types";
 
 const MONTHS = Array.from({ length: 12 }, (_, i) => `${i + 1}月`);
@@ -53,17 +56,36 @@ export const LINE_COLORS = [
   "#2f4f5f",
 ];
 
-export type Metric = "max" | "mean" | "min";
+export type Metric = "max" | "mean" | "min" | "hum";
 
-export const METRIC_LABEL: Record<Metric, string> = { max: "最高温", mean: "平均温", min: "最低温" };
+export const METRIC_LABEL: Record<Metric, string> = {
+  max: "最高温",
+  mean: "平均温",
+  min: "最低温",
+  hum: "相对湿度",
+};
+
+/** 各指标的显示单位、y 轴刻度步长与读数小数位。 */
+const METRIC_FORMAT: Record<Metric, { unit: string; step: number; decimals: number }> = {
+  max: { unit: "°", step: 5, decimals: 1 },
+  mean: { unit: "°", step: 5, decimals: 1 },
+  min: { unit: "°", step: 5, decimals: 1 },
+  hum: { unit: "%", step: 10, decimals: 0 },
+};
 
 export interface CompareSeries {
   id: string;
   name: string;
+  /** 1995–2024 共 30 年逐月气温。 */
   months: MonthlyTemp[];
+  /** 2023–2025 近 3 年逐月环境量,湿度指标从这里取。 */
+  env: MonthlyEnv[];
 }
 
-function pick(m: MonthlyTemp, metric: Metric): number {
+/** 按指标取某城某月的数值:温度取气温序列,湿度取环境序列。 */
+function valueAt(s: CompareSeries, i: number, metric: Metric): number {
+  if (metric === "hum") return s.env[i].hum;
+  const m = s.months[i];
   return metric === "max" ? m.max : metric === "min" ? m.min : m.mean;
 }
 
@@ -73,24 +95,26 @@ export function CompareChart({
   metric,
 }: {
   series: CompareSeries[];
-  /** 固定的 y 轴温度范围 [最低, 最高],与单城视图共用。 */
+  /** 当前指标的固定 y 轴范围 [最低, 最高]:温度与单城视图共用,湿度另用一套。 */
   domain: [number, number];
   metric: Metric;
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const [lo, hi] = domain;
   const span = hi - lo || 1;
+  const isHum = metric === "hum";
+  const { unit, step, decimals } = METRIC_FORMAT[metric];
 
   const xOf = (i: number) => PAD.l + SLOT * (i + 0.5);
   const yOf = (t: number) => PAD.t + INNER_H * (1 - (t - lo) / span);
 
   const ticks: number[] = [];
-  for (let t = lo; t <= hi + 1e-6; t += 5) ticks.push(t);
+  for (let t = lo; t <= hi + 1e-6; t += step) ticks.push(t);
 
   // 线尾标签:按终点高度排序后做“向下推挤 + 整体上移”去重叠,避免多城标签叠在一起。
   const labelY = new Array<number>(series.length);
   const order = series
-    .map((s, i) => ({ i, y: yOf(pick(s.months[11], metric)) }))
+    .map((s, i) => ({ i, y: yOf(valueAt(s, 11, metric)) }))
     .sort((a, b) => a.y - b.y);
   for (let k = 1; k < order.length; k++) {
     if (order[k].y - order[k - 1].y < 12) order[k].y = order[k - 1].y + 12;
@@ -113,7 +137,7 @@ export function CompareChart({
     hover === null
       ? []
       : series
-          .map((s, i) => ({ name: s.name, color: LINE_COLORS[i % LINE_COLORS.length], v: pick(s.months[hover], metric) }))
+          .map((s, i) => ({ name: s.name, color: LINE_COLORS[i % LINE_COLORS.length], v: valueAt(s, hover, metric) }))
           .sort((a, b) => b.v - a.v);
 
   return (
@@ -131,6 +155,47 @@ export function CompareChart({
         onMouseMove={handleMove}
         onMouseLeave={() => setHover(null)}
       >
+        {/* 湿度舒适带:与宜居度评分模型的最佳湿度区间一致 */}
+        {isHum && (
+          <g>
+            <rect
+              x={PAD.l}
+              y={yOf(HUM_COMFORT_BAND[1])}
+              width={INNER_W}
+              height={yOf(HUM_COMFORT_BAND[0]) - yOf(HUM_COMFORT_BAND[1])}
+              fill="var(--foreground)"
+              opacity={0.045}
+            />
+            <line
+              x1={PAD.l}
+              y1={yOf(HUM_COMFORT_BAND[1])}
+              x2={PAD.l + INNER_W}
+              y2={yOf(HUM_COMFORT_BAND[1])}
+              stroke="var(--color-line-strong)"
+              strokeWidth={1}
+              strokeDasharray="3 4"
+            />
+            <line
+              x1={PAD.l}
+              y1={yOf(HUM_COMFORT_BAND[0])}
+              x2={PAD.l + INNER_W}
+              y2={yOf(HUM_COMFORT_BAND[0])}
+              stroke="var(--color-line-strong)"
+              strokeWidth={1}
+              strokeDasharray="3 4"
+            />
+            <text
+              x={PAD.l + INNER_W - 6}
+              y={yOf(HUM_COMFORT_BAND[1]) + 13}
+              textAnchor="end"
+              className="text-[10px]"
+              fill="var(--color-faint)"
+            >
+              {HUM_COMFORT_BAND[0]}–{HUM_COMFORT_BAND[1]}% 舒适区间
+            </text>
+          </g>
+        )}
+
         {/* y 轴网格与刻度 */}
         {ticks.map((t) => (
           <g key={t}>
@@ -144,7 +209,8 @@ export function CompareChart({
               strokeDasharray={t === lo ? undefined : "2 4"}
             />
             <text x={PAD.l - 8} y={yOf(t) + 3.5} textAnchor="end" className="font-mono text-[10px]" fill="var(--color-faint)">
-              {t}°
+              {t}
+              {unit}
             </text>
           </g>
         ))}
@@ -152,11 +218,13 @@ export function CompareChart({
         {/* 城市折线 + 悬停点 */}
         {series.map((s, i) => {
           const color = LINE_COLORS[i % LINE_COLORS.length];
-          const pts = s.months.map((m, k) => `${xOf(k).toFixed(1)},${yOf(pick(m, metric)).toFixed(1)}`).join(" ");
+          const pts = s.months
+            .map((_, k) => `${xOf(k).toFixed(1)},${yOf(valueAt(s, k, metric)).toFixed(1)}`)
+            .join(" ");
           return (
             <g key={`line-${s.id}`}>
               <polyline points={pts} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-              {hover !== null && <circle cx={xOf(hover)} cy={yOf(pick(s.months[hover], metric))} r={3.4} fill={color} />}
+              {hover !== null && <circle cx={xOf(hover)} cy={yOf(valueAt(s, hover, metric))} r={3.4} fill={color} />}
             </g>
           );
         })}
@@ -164,7 +232,7 @@ export function CompareChart({
         {/* 线尾城市标签 */}
         {series.map((s, i) => {
           const color = LINE_COLORS[i % LINE_COLORS.length];
-          const yEnd = yOf(pick(s.months[11], metric));
+          const yEnd = yOf(valueAt(s, 11, metric));
           const ly = labelY[i];
           return (
             <g key={`label-${s.id}`}>
@@ -230,20 +298,23 @@ export function CompareChart({
         </div>
       )}
 
-      {/* 悬停读数(按温度从高到低) */}
+      {/* 悬停读数(按数值从高到低) */}
       {hover !== null && readout.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10.5px] text-muted">
           {readout.map((r) => (
             <span key={r.name} className="flex items-center gap-1">
               <span className="inline-block h-2 w-2 rounded-full" style={{ background: r.color }} />
-              {r.name} {r.v.toFixed(1)}°
+              {r.name} {r.v.toFixed(decimals)}
+              {unit}
             </span>
           ))}
         </div>
       )}
 
       <p className="mt-1.5 text-[10.5px] text-faint">
-        y 轴温度范围 {lo}–{hi} ℃ 与单城视图一致;折线颜色见上方图例,线尾标注城市名。
+        {isHum
+          ? `y 轴相对湿度范围 ${lo}–${hi} % 固定不变,浅色带为 ${HUM_COMFORT_BAND[0]}–${HUM_COMFORT_BAND[1]} % 舒适区间(与宜居度评分模型一致);湿度为 2023–2025 近 3 年口径,与 30 年气温不可直接混算。`
+          : `y 轴温度范围 ${lo}–${hi} ℃ 与单城视图一致;折线颜色见上方图例,线尾标注城市名。`}
       </p>
     </div>
   );
