@@ -17,17 +17,20 @@ import {
   Eye,
   EyeSlash,
   FrameCorners,
-  GitBranch,
+  Funnel,
   MagnifyingGlass,
   Minus,
   Plus,
+  Question,
   X,
 } from "@phosphor-icons/react/dist/ssr";
 import { cn, IconButton } from "@/components/ui";
-import { NodeCard } from "./NodeCard";
+import { NodeCard, RevisionCard } from "./NodeCard";
+import { NodeMenu, type MenuTarget } from "./NodeMenu";
+import { HelpNav } from "./HelpNav";
 import { GAP_X, GAP_Y, NODE_H, NODE_W, type PositionedNode, type TreeLayout } from "@/lib/chat-tree/layout";
-import { indexNodes, subtreeIds, treeStats } from "@/lib/chat-tree/tree";
-import type { Conversation, TreeDirection } from "@/lib/chat-tree/types";
+import { indexNodes, revisionNodeId, treeStats } from "@/lib/chat-tree/tree";
+import type { ChatNode, Conversation, RevisionRef, TreeDirection } from "@/lib/chat-tree/types";
 
 const MIN_K = 0.28;
 const MAX_K = 2.2;
@@ -45,6 +48,17 @@ export interface ViewCommand {
   token: number;
 }
 
+/** 节点右键菜单触发的操作，统一由 App 侧实现。 */
+export interface NodeActions {
+  followUp: (id: string) => void;
+  revise: (id: string) => void;
+  toggleVersions: (id: string) => void;
+  hide: (id: string) => void;
+  collapse: (id: string) => void;
+  copy: (id: string) => void;
+  remove: (id: string) => void;
+}
+
 interface View {
   x: number;
   y: number;
@@ -53,8 +67,10 @@ interface View {
 
 export function TreeCanvas({
   conversation,
+  displayNodes,
   layout,
   selectedId,
+  selectedRevision,
   pathIds,
   focusPath,
   matchIds,
@@ -62,16 +78,26 @@ export function TreeCanvas({
   direction,
   focusRequest,
   viewCommand,
+  filterHidden,
+  hiddenCount,
+  hiddenIds,
+  expandedVersions,
+  onFilterHiddenChange,
   onSelect,
-  onToggleCollapse,
   onDirectionChange,
   onSearchChange,
   onFocusPathChange,
   onExportJson,
+  onExportPath,
+  onRestoreRevision,
+  nodeActions,
 }: {
   conversation: Conversation;
+  /** 真实节点 + 已展开的版本伪节点，和 layout 一一对应。 */
+  displayNodes: ChatNode[];
   layout: TreeLayout;
   selectedId: string | null;
+  selectedRevision: RevisionRef | null;
   pathIds: Set<string>;
   focusPath: boolean;
   matchIds: Set<string>;
@@ -79,12 +105,21 @@ export function TreeCanvas({
   direction: TreeDirection;
   focusRequest: FocusRequest | null;
   viewCommand: ViewCommand | null;
-  onSelect: (id: string) => void;
-  onToggleCollapse: (id: string) => void;
+  filterHidden: boolean;
+  hiddenCount: number;
+  /** 自身或祖先被标记隐藏的节点集合：整棵子树一起灰显。 */
+  hiddenIds: Set<string>;
+  expandedVersions: Set<string>;
+  onFilterHiddenChange: (v: boolean) => void;
+  /** 选中真实提问时 revision 传 null；选中伪节点时传它的引用。 */
+  onSelect: (id: string, revision?: RevisionRef | null) => void;
   onDirectionChange: (d: TreeDirection) => void;
   onSearchChange: (q: string) => void;
   onFocusPathChange: (v: boolean) => void;
   onExportJson: () => void;
+  onExportPath: () => void;
+  onRestoreRevision: (ownerId: string, index: number) => void;
+  nodeActions: NodeActions;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const minimapRef = useRef<SVGSVGElement>(null);
@@ -98,6 +133,8 @@ export function TreeCanvas({
   const [dragging, setDragging] = useState(false);
   const [matchCursor, setMatchCursor] = useState(-1);
   const [showMore, setShowMore] = useState(false);
+  const [menu, setMenu] = useState<MenuTarget | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
   const layoutRef = useRef(layout);
   const selectedRef = useRef(selectedId);
   const initializedKey = useRef("");
@@ -299,18 +336,35 @@ export function TreeCanvas({
     }
   };
 
-  const nodeMap = useMemo(() => indexNodes(conversation.nodes), [conversation.nodes]);
-  const ordinals = useMemo(
-    () => new Map(conversation.nodes.map((n, i) => [n.id, i + 1])),
-    [conversation.nodes],
-  );
-  const hiddenCounts = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const n of conversation.nodes) {
-      if (n.collapsed) m.set(n.id, subtreeIds(conversation.nodes, n.id).size - 1);
+  const nodeMap = useMemo(() => indexNodes(displayNodes), [displayNodes]);
+
+  /** 版本链：按版本顺序把相邻两版连起来，终点是当前版本所在的原节点。 */
+  const versionLinks = useMemo(() => {
+    const links: { id: string; from: PositionedNode; to: PositionedNode }[] = [];
+    for (const node of conversation.nodes) {
+      if (!expandedVersions.has(node.id) || !node.revisions?.length) continue;
+      const active = node.activeRevision ?? 0;
+      // 当前版永远放在链尾，箭头终点始终是它（切回旧版后仍然是「指向当前」）。
+      const chain = node.revisions
+        .map((_, i) => i)
+        .filter((i) => i !== active)
+        .map((i) => revisionNodeId(node.id, i));
+      chain.push(node.id);
+      for (let i = 0; i < chain.length - 1; i += 1) {
+        const from = layout.byId.get(chain[i]!);
+        const to = layout.byId.get(chain[i + 1]!);
+        if (from && to) links.push({ id: `${from.id}->${to.id}`, from, to });
+      }
     }
-    return m;
-  }, [conversation.nodes]);
+    return links;
+  }, [conversation.nodes, expandedVersions, layout]);
+
+  /** 画布上的任何卡片都走这里选中：伪节点记住原提问 + 版本下标。 */
+  const selectLayoutNode = (id: string) => {
+    const node = nodeMap.get(id);
+    if (node?.revisionRef) onSelect(node.revisionRef.ownerId, node.revisionRef);
+    else onSelect(id, null);
+  };
   const stats = useMemo(() => treeStats(conversation.nodes), [conversation.nodes]);
   const matches = useMemo(() => layout.nodes.filter((n) => matchIds.has(n.id)), [layout.nodes, matchIds]);
 
@@ -319,7 +373,7 @@ export function TreeCanvas({
     const next = (matchCursor + 1) % matches.length;
     setMatchCursor(next);
     const node = matches[next]!;
-    onSelect(node.id);
+    selectLayoutNode(node.id);
     centerOn(node);
   };
 
@@ -344,9 +398,9 @@ export function TreeCanvas({
     <section className="flex min-w-0 flex-1 flex-col overflow-hidden border-x border-line bg-canvas">
       {/* 工具条 */}
       <header className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-line bg-surface px-3 py-2">
-        <div className="min-w-0 flex-1 pr-2">
+        <div className="min-w-0 flex-1 pr-2 lg:min-w-[252px]">
           <h2 className="truncate text-[13px] font-semibold text-ink">{conversation.title}</h2>
-          <p className="mt-0.5 hidden items-center gap-1.5 font-mono text-[10px] text-faint lg:flex">
+          <p className="mt-0.5 hidden items-center gap-1.5 whitespace-nowrap font-mono text-[10px] text-faint lg:flex">
             <span>{stats.count} 节点</span>
             <span className="text-line-strong">/</span>
             <span>{stats.forks} 处分叉</span>
@@ -377,6 +431,9 @@ export function TreeCanvas({
           </div>
           <IconButton label="适配全部节点" className="h-8 w-8 border border-line bg-canvas" onClick={fit}>
             <FrameCorners size={14} />
+          </IconButton>
+          <IconButton label="功能导航与快捷键" className="h-8 w-8 border border-line bg-canvas" onClick={() => setHelpOpen(true)}>
+            <Question size={14} />
           </IconButton>
           <button
             type="button"
@@ -464,7 +521,36 @@ export function TreeCanvas({
             {focusPath ? <Eye size={13} /> : <EyeSlash size={13} />}
             聚焦路径
           </button>
-          <IconButton label="导出当前会话 JSON" className="h-8 w-8 border border-line bg-canvas" onClick={onExportJson}>
+          <button
+            type="button"
+            onClick={() => onFilterHiddenChange(!filterHidden)}
+            disabled={hiddenCount === 0}
+            title={
+              hiddenCount === 0
+                ? "当前没有隐藏分支；右键节点可标记隐藏"
+                : filterHidden
+                  ? "取消过滤，隐藏分支将以灰色留在画布上"
+                  : `从画布过滤 ${hiddenCount} 条隐藏分支`
+            }
+            className={cn(
+              "flex h-8 items-center gap-1.5 rounded-md border px-2 text-[11px] transition-colors disabled:opacity-40",
+              filterHidden ? "border-ink bg-ink text-white" : "border-line bg-canvas text-muted hover:border-line-strong hover:text-ink",
+            )}
+          >
+            <Funnel size={13} />
+            过滤隐藏
+            {hiddenCount > 0 && <span className="font-mono">{hiddenCount}</span>}
+          </button>
+          <button
+            type="button"
+            onClick={onExportPath}
+            disabled={conversation.nodes.length === 0}
+            title="把当前追问链导出为 Markdown"
+            className="flex h-8 items-center gap-1 rounded-md border border-line bg-canvas px-2 text-[11px] text-muted hover:border-line-strong hover:text-ink disabled:opacity-40"
+          >
+            <DownloadSimple size={13} /> 导出链
+          </button>
+          <IconButton label="导出当前会话 JSON" className="h-8 w-8 border border-line bg-canvas" onClick={onExportJson} disabled={conversation.nodes.length === 0}>
             <DownloadSimple size={14} />
           </IconButton>
         </div>
@@ -477,6 +563,7 @@ export function TreeCanvas({
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
+        onContextMenu={(e) => e.preventDefault()}
         onDoubleClick={(e) => {
           if ((e.target as HTMLElement).closest("[data-tree-node]")) return;
           fit();
@@ -492,6 +579,17 @@ export function TreeCanvas({
           }}
         />
 
+        {displayNodes.length === 0 && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6">
+            <div className="max-w-[280px] rounded-xl border border-dashed border-line-strong bg-surface/85 px-5 py-4 text-center shadow-sm">
+              <div className="text-[13px] font-medium text-ink">还没有提问</div>
+              <p className="mt-1.5 text-[11px] leading-relaxed text-muted">
+                在右侧写下第一个问题，它就会成为这棵树的根节点。
+              </p>
+            </div>
+          </div>
+        )}
+
         <div
           className="absolute left-0 top-0 origin-top-left select-none"
           style={{
@@ -506,49 +604,88 @@ export function TreeCanvas({
             viewBox={`0 0 ${layout.width} ${layout.height}`}
             className="pointer-events-none absolute inset-0 overflow-visible"
           >
-            {layout.edges.map((edge) => {
-              const active = pathIds.has(edge.from) && pathIds.has(edge.to);
-              return (
-                <g key={edge.id} className={cn(focusPath && !active && "opacity-20")}>
-                  <path
-                    d={edge.d}
-                    fill="none"
-                    strokeWidth={active ? 2.2 * (1 / Math.max(view.k, 0.6)) : 1.8}
-                    strokeLinejoin="round"
-                    strokeLinecap="round"
-                    className={active ? "stroke-ink" : "stroke-faint"}
-                  />
-                  {edge.junction && edge.marker?.index === 1 && (
-                    <circle
-                      cx={edge.junction.x}
-                      cy={edge.junction.y}
-                      r={3.6}
-                      className={cn("fill-surface", active ? "stroke-ink" : "stroke-line-strong")}
-                      strokeWidth={1.4}
+            {(() => {
+              const seenJunctions = new Set<string>();
+              return layout.edges.map((edge) => {
+                const active = pathIds.has(edge.from) && pathIds.has(edge.to);
+                const isHidden = hiddenIds.has(edge.to);
+                const isRevision = edge.kind === "revision";
+                const jKey = edge.junction ? `${edge.junction.x},${edge.junction.y}` : null;
+                const showJunction = !!jKey && !seenJunctions.has(jKey);
+                if (jKey) seenJunctions.add(jKey);
+                return (
+                  <g
+                    key={edge.id}
+                    className={cn(focusPath && !active && !isRevision && "opacity-20", isHidden && "opacity-40")}
+                  >
+                    <path
+                      d={edge.d}
+                      fill="none"
+                      strokeDasharray={isHidden ? "6 5" : isRevision ? "3 5" : undefined}
+                      strokeWidth={active ? 2.2 * (1 / Math.max(view.k, 0.6)) : isRevision ? 1.4 : 1.8}
+                      strokeLinejoin="round"
+                      strokeLinecap="round"
+                      className={active ? "stroke-ink" : isRevision ? "stroke-acc-yellow-fg" : "stroke-faint"}
                     />
-                  )}
-                  {edge.marker && (
-                    <g>
+                    {showJunction && (
                       <circle
-                        cx={edge.marker.x}
-                        cy={edge.marker.y}
-                        r={8.5}
+                        cx={edge.junction!.x}
+                        cy={edge.junction!.y}
+                        r={3.6}
                         className={cn("fill-surface", active ? "stroke-ink" : "stroke-line-strong")}
-                        strokeWidth={1.2}
+                        strokeWidth={1.4}
                       />
-                      <text
-                        x={edge.marker.x}
-                        y={edge.marker.y + 0.5}
-                        textAnchor="middle"
-                        dominantBaseline="middle"
-                        fontSize={9}
-                        className={cn("font-mono", active ? "fill-ink" : "fill-muted")}
-                      >
-                        {edge.marker.index}
-                      </text>
-                    </g>
-                  )}
-                </g>
+                    )}
+                  </g>
+                );
+              });
+            })()}
+          </svg>
+
+          {/* 版本链：旧版 → 下一版 → 当前版。箭头是平级节点之间的横向引用，不是父子连线。 */}
+          <svg
+            width={layout.width}
+            height={layout.height}
+            viewBox={`0 0 ${layout.width} ${layout.height}`}
+            className="pointer-events-none absolute inset-0 overflow-visible"
+          >
+            <defs>
+              <marker
+                id="chat-tree-version-arrow"
+                viewBox="0 0 10 10"
+                refX="9"
+                refY="5"
+                markerWidth="6"
+                markerHeight="6"
+                orient="auto-start-reverse"
+              >
+                <path d="M 0 0 L 10 5 L 0 10 z" className="fill-acc-yellow-fg" />
+              </marker>
+            </defs>
+            {versionLinks.map(({ id, from, to }) => {
+              const faded =
+                hiddenIds.has(from.id) ||
+                hiddenIds.has(to.id) ||
+                (focusPath && (!pathIds.has(from.id) || !pathIds.has(to.id)));
+              const r = (n: number) => Math.round(n * 10) / 10;
+              // 整体横向：后继走左/右，版本链就走上/下的竖线；整体纵向则反过来。
+              // 两组线各用一组端口，不再和出入端子重叠。
+              const d =
+                direction === "LR"
+                  ? `M ${r(from.x + from.w / 2)} ${r(from.y + from.h)} L ${r(to.x + to.w / 2)} ${r(to.y)}`
+                  : `M ${r(from.x + from.w)} ${r(from.y + from.h / 2)} L ${r(to.x)} ${r(to.y + to.h / 2)}`;
+              return (
+                <path
+                  key={id}
+                  d={d}
+                  fill="none"
+                  className="stroke-acc-yellow-fg"
+                  strokeWidth={1.5}
+                  strokeDasharray="5 4"
+                  strokeLinecap="round"
+                  opacity={faded ? 0.25 : 0.9}
+                  markerEnd="url(#chat-tree-version-arrow)"
+                />
               );
             })}
           </svg>
@@ -556,33 +693,57 @@ export function TreeCanvas({
           {layout.nodes.map((pos) => {
             const node = nodeMap.get(pos.id);
             if (!node) return null;
+            const hidden = hiddenIds.has(node.id);
+            const dimmed = focusPath && !pathIds.has(node.id);
+            const matched = matchIds.has(node.id);
+            if (node.revisionRef) {
+              const ref = node.revisionRef;
+              const owner = conversation.nodes.find((n) => n.id === ref.ownerId);
+              return (
+                <RevisionCard
+                  key={node.id}
+                  node={node}
+                  pos={pos}
+                  selected={!!selectedRevision && selectedRevision.ownerId === ref.ownerId && selectedRevision.index === ref.index}
+                  isCurrent={owner ? (owner.activeRevision ?? 0) === ref.index : false}
+                  dimmed={dimmed}
+                  matched={matched}
+                  hidden={hidden}
+                  direction={direction}
+                  onSelect={() => onSelect(ref.ownerId, ref)}
+                  onRestore={() => onRestoreRevision(ref.ownerId, ref.index)}
+                />
+              );
+            }
             return (
               <NodeCard
                 key={node.id}
                 node={node}
                 pos={pos}
-                ordinal={ordinals.get(node.id) ?? 0}
-                selected={selectedId === node.id}
+                selected={selectedId === node.id && !selectedRevision}
                 onPath={pathIds.has(node.id)}
-                dimmed={focusPath && !pathIds.has(node.id)}
-                matched={matchIds.has(node.id)}
-                hiddenCount={hiddenCounts.get(node.id) ?? 0}
+                dimmed={dimmed}
+                matched={matched}
+                hidden={hidden}
+                versionPorts={expandedVersions.has(node.id)}
                 direction={direction}
-                onSelect={() => onSelect(node.id)}
-                onToggleCollapse={() => onToggleCollapse(node.id)}
+                onSelect={() => onSelect(node.id, null)}
+                onToggleCollapse={() => nodeActions.collapse(node.id)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  selectLayoutNode(node.id);
+                  const r = containerRef.current?.getBoundingClientRect();
+                  setMenu({
+                    id: node.id,
+                    x: e.clientX,
+                    y: e.clientY,
+                    bounds: r ? { left: r.left, top: r.top, right: r.right, bottom: r.bottom } : { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight },
+                  });
+                }}
               />
             );
           })}
-        </div>
-
-        {/* 操作提示 */}
-        <div className="pointer-events-none absolute bottom-16 left-3 flex flex-col gap-1 rounded-md border border-line bg-surface/85 px-2.5 py-2 text-[10.5px] leading-relaxed text-faint backdrop-blur-sm lg:bottom-3 lg:flex">
-          <span className="hidden lg:inline">滚轮缩放 · 拖拽平移 · 双击空白处适配</span>
-          <span className="lg:hidden">拖拽平移 · 双指或按钮缩放 · 点节点看回答</span>
-          <span className="hidden items-center gap-1.5 lg:flex">
-            <GitBranch size={11} className="text-acc-blue-fg" />
-            实线为当前追问链，圆点数字是同一提问下的并列分支
-          </span>
         </div>
 
         {/* 小地图：窄屏让位给画布，靠「适配」按钮看全图 */}
@@ -603,17 +764,29 @@ export function TreeCanvas({
             onClick={onMinimapClick}
             className="block cursor-crosshair bg-canvas"
           >
-            {layout.nodes.map((n) => (
-              <rect
-                key={n.id}
-                x={n.x}
-                y={n.y}
-                width={n.w}
-                height={n.h}
-                rx={8}
-                className={cn(selectedId === n.id ? "fill-ink" : pathIds.has(n.id) ? "fill-acc-blue-fg" : "fill-line-strong")}
-              />
-            ))}
+            {layout.nodes.map((n) => {
+              const isRevision = !!nodeMap.get(n.id)?.revisionRef;
+              return (
+                <rect
+                  key={n.id}
+                  x={n.x}
+                  y={n.y}
+                  width={n.w}
+                  height={n.h}
+                  rx={8}
+                  opacity={hiddenIds.has(n.id) ? 0.35 : 1}
+                  className={cn(
+                    isRevision
+                      ? "fill-acc-yellow-fg"
+                      : selectedId === n.id && !selectedRevision
+                        ? "fill-ink"
+                        : pathIds.has(n.id)
+                          ? "fill-acc-blue-fg"
+                          : "fill-line-strong",
+                  )}
+                />
+              );
+            })}
             <rect
               x={viewport.x}
               y={viewport.y}
@@ -626,6 +799,23 @@ export function TreeCanvas({
           </svg>
         </div>
       </div>
+
+      {menu && (
+        <NodeMenu
+          target={menu}
+          node={nodeMap.get(menu.id) ?? null}
+          onClose={() => setMenu(null)}
+          onFollowUp={nodeActions.followUp}
+          onRevise={nodeActions.revise}
+          onToggleVersions={nodeActions.toggleVersions}
+          versionsExpanded={expandedVersions.has(menu.id)}
+          onHide={nodeActions.hide}
+          onCollapse={nodeActions.collapse}
+          onCopy={nodeActions.copy}
+          onRemove={nodeActions.remove}
+        />
+      )}
+      {helpOpen && <HelpNav onClose={() => setHelpOpen(false)} />}
     </section>
   );
 }

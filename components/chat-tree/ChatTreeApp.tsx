@@ -5,14 +5,30 @@ import { CaretUp, List, X } from "@phosphor-icons/react/dist/ssr";
 import { cn } from "@/components/ui";
 import { AnswerPanel } from "./AnswerPanel";
 import { ConversationList } from "./ConversationList";
-import { TreeCanvas, type FocusRequest, type ViewCommand } from "./TreeCanvas";
+import { TreeCanvas, type FocusRequest, type NodeActions, type ViewCommand } from "./TreeCanvas";
 import { layoutTree } from "@/lib/chat-tree/layout";
-import { makeDemoAnswer } from "@/lib/chat-tree/generate";
+import { makeDemoAnswer, makeRevisionAnswer } from "@/lib/chat-tree/generate";
+import { buildModelMessages, streamModelAnswer, type ModelMessage } from "@/lib/chat-tree/model";
 import { SAMPLE_CONVERSATIONS } from "@/lib/chat-tree/sample";
-import { childrenOf, nextNodeId, nowLabel, pathTo, pathToMarkdown, subtreeIds } from "@/lib/chat-tree/tree";
-import type { ChatNode, Conversation, FollowUpMode, PersistedState, TreeDirection } from "@/lib/chat-tree/types";
+import {
+  answerOf,
+  buildDisplayNodes,
+  childrenOf,
+  hiddenBranchCount,
+  hiddenIds,
+  nextNodeId,
+  nowLabel,
+  pathTo,
+  pathToMarkdown,
+  revisionNodeId,
+  setActiveRevision,
+  subtreeIds,
+  visibleNodes,
+  withRevision,
+} from "@/lib/chat-tree/tree";
+import type { ChatNode, Conversation, FollowUpMode, PersistedState, RevisionRef, TreeDirection } from "@/lib/chat-tree/types";
 
-const STORAGE_KEY = "chat-tree-demo-v1";
+const STORAGE_KEY = "chat-tree-demo-v3";
 
 function cloneSamples(): Conversation[] {
   return SAMPLE_CONVERSATIONS.map((c) => ({ ...c, nodes: c.nodes.map((n) => ({ ...n })) }));
@@ -28,7 +44,7 @@ function isPersistedState(v: unknown): v is PersistedState {
   return o.conversations.every((c) => {
     if (!c || typeof c !== "object") return false;
     const conv = c as Record<string, unknown>;
-    return typeof conv.id === "string" && typeof conv.title === "string" && Array.isArray(conv.nodes) && conv.nodes.length > 0;
+    return typeof conv.id === "string" && typeof conv.title === "string" && Array.isArray(conv.nodes);
   });
 }
 
@@ -43,10 +59,11 @@ function download(filename: string, text: string, mime: string) {
 }
 
 const safeName = (s: string) => s.replace(/[\\/:*?"<>|]/g, "_").slice(0, 40);
+const errorMessage = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /**
  * 主壳：左侧会话列表 + 中间可缩放的提问树 + 右侧当前节点的回答。
- * 所有数据都在浏览器里（localStorage），没有后端、没有模型调用。
+ * 树数据保存在浏览器（localStorage）；新回答通过服务端 /api/chat 调用真实模型。
  */
 export function ChatTreeApp() {
   const [conversations, setConversations] = useState<Conversation[]>(cloneSamples);
@@ -55,13 +72,28 @@ export function ChatTreeApp() {
   const [direction, setDirection] = useState<TreeDirection>("LR");
   const [loaded, setLoaded] = useState(false);
   const [focusPath, setFocusPath] = useState(false);
+  // 默认 false：隐藏分支仍留在画布上、只是灰显；打开「过滤隐藏」才真正从布局剔除。
+  const [filterHidden, setFilterHidden] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [convQuery, setConvQuery] = useState("");
   const [mobileListOpen, setMobileListOpen] = useState(false);
   const [mobileAnswerOpen, setMobileAnswerOpen] = useState(false);
   const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null);
   const [viewCommand, setViewCommand] = useState<ViewCommand | null>(null);
+  const [expandedVersions, setExpandedVersions] = useState<string[]>([]);
+  /** 当前在看的回答版本：只影响右侧面板与路径高亮，不改动持久化的当前版本。 */
+  const [selectedRevision, setSelectedRevision] = useState<RevisionRef | null>(null);
+  const [composerMode, setComposerMode] = useState<FollowUpMode>("continue");
+  /** 切到「修改」时预填原问题；token 递增触发面板重新填入并聚焦。 */
+  const [prefill, setPrefill] = useState<{ text: string; token: number } | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [modelError, setModelError] = useState<string | null>(null);
   const tokenRef = useRef(0);
+  /** 同步锁：连点两次发送时，第二次要在 state 更新前就被挡住。 */
+  const generatingRef = useRef(false);
+  /** 流式 token 先攒在这里，按帧写回 state，避免每个字都整棵树重渲染。 */
+  const streamRef = useRef<{ convId: string; id: string; revision: boolean; text: string } | null>(null);
+  const flushTimerRef = useRef<number | null>(null);
 
   // 读本地存档放到微任务里执行，避免水合期间同步改状态。
   useEffect(() => {
@@ -77,6 +109,8 @@ export function ChatTreeApp() {
             setActiveConvId(parsed.activeConvId);
             setRawSelectedId(parsed.selectedId);
             setDirection(parsed.direction);
+            setFilterHidden(parsed.filterHidden);
+            setExpandedVersions(parsed.expandedVersions);
           }
         }
       } catch {
@@ -89,15 +123,33 @@ export function ChatTreeApp() {
     };
   }, []);
 
+  useEffect(
+    () => () => {
+      if (flushTimerRef.current !== null) window.clearTimeout(flushTimerRef.current);
+    },
+    [],
+  );
+
   useEffect(() => {
     if (!loaded) return;
-    const state: PersistedState = { conversations, activeConvId, selectedId: rawSelectedId, direction };
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch {
-      /* 隐私模式 / 配额不足：不影响本次使用 */
-    }
-  }, [loaded, conversations, activeConvId, rawSelectedId, direction]);
+    const state: PersistedState = {
+      conversations,
+      activeConvId,
+      selectedId: rawSelectedId,
+      direction,
+      filterHidden,
+      expandedVersions,
+    };
+    // 流式期间节点内容更新很频繁；防抖后才落盘，避免每个 token 都写一次 localStorage。
+    const timer = window.setTimeout(() => {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      } catch {
+        /* 隐私模式 / 配额不足：不影响本次使用 */
+      }
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [loaded, conversations, activeConvId, rawSelectedId, direction, filterHidden, expandedVersions]);
 
   const activeConv = conversations.find((c) => c.id === activeConvId) ?? conversations[0]!;
   const nodes = activeConv.nodes;
@@ -105,24 +157,53 @@ export function ChatTreeApp() {
   const selectedNode = nodes.find((n) => n.id === selectedId) ?? null;
   const ordinal = nodes.findIndex((n) => n.id === selectedId) + 1;
 
-  const layout = useMemo(() => layoutTree(nodes, direction), [nodes, direction]);
-  const pathIds = useMemo(
-    () => new Set(selectedId ? pathTo(nodes, selectedId).map((n) => n.id) : []),
-    [nodes, selectedId],
-  );
+  const expandedSet = useMemo(() => new Set(expandedVersions), [expandedVersions]);
+  // 版本只在展开时进入画布：与提问同层、用箭头串联，各自带自己的后继树。
+  const displayNodes = useMemo(() => buildDisplayNodes(nodes, expandedSet), [nodes, expandedSet]);
+  // 默认把隐藏节点也放进布局（整棵子树一起灰显）；开启「过滤隐藏」才从布局剔除。
+  const layout = useMemo(() => layoutTree(visibleNodes(displayNodes, !filterHidden), direction), [displayNodes, direction, filterHidden]);
+  const hiddenSet = useMemo(() => hiddenIds(displayNodes), [displayNodes]);
+  // 版本没有真实节点可切换时（删掉 / 收起 / 换会话），自动退回当前版。
+  const previewRevision =
+    selectedRevision &&
+    selectedRevision.ownerId === selectedId &&
+    expandedSet.has(selectedId ?? "") &&
+    selectedNode?.revisions?.[selectedRevision.index]
+      ? selectedRevision
+      : null;
+  const pathIds = useMemo(() => {
+    const ids = selectedId ? pathTo(nodes, selectedId).map((n) => n.id) : [];
+    if (previewRevision && selectedId) ids.push(revisionNodeId(selectedId, previewRevision.index));
+    return new Set(ids);
+  }, [nodes, selectedId, previewRevision]);
   const matchIds = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return new Set<string>();
-    return new Set(nodes.filter((n) => n.prompt.toLowerCase().includes(q) || n.answer.toLowerCase().includes(q)).map((n) => n.id));
-  }, [nodes, searchQuery]);
+    return new Set(displayNodes.filter((n) => n.prompt.toLowerCase().includes(q) || n.answer.toLowerCase().includes(q)).map((n) => n.id));
+  }, [displayNodes, searchQuery]);
   const chain = useMemo(() => (selectedId ? pathTo(nodes, selectedId) : []), [nodes, selectedId]);
-  const childrenNodes = useMemo(() => (selectedId ? childrenOf(nodes, selectedId) : []), [nodes, selectedId]);
+  // 预览历史版时只改读取视图：activeRevision 指向该版，数据本身不变。
+  const panelNode =
+    previewRevision && selectedNode?.revisions?.[previewRevision.index]
+      ? { ...selectedNode, activeRevision: previewRevision.index }
+      : selectedNode;
 
   const requestFocus = (id: string) => setFocusRequest({ id, token: ++tokenRef.current });
   const requestCommand = (kind: ViewCommand["kind"]) => setViewCommand({ kind, token: ++tokenRef.current });
-  const selectAndFocus = (id: string) => {
+  /** 切到修改模式就把当前（含预览版本）的问题填进输入框。 */
+  const changeComposerMode = (mode: FollowUpMode) => {
+    setComposerMode(mode);
+    if (mode === "revise" && panelNode) {
+      setPrefill({ text: answerOf(panelNode).prompt, token: ++tokenRef.current });
+    } else if (mode === "continue") {
+      // 从修改切回追问时清掉原问题，避免把旧问题误当成新问题发出去。
+      setPrefill({ text: "", token: ++tokenRef.current });
+    }
+  };
+  const selectAndFocus = (id: string, revision?: RevisionRef | null) => {
     setRawSelectedId(id);
-    requestFocus(id);
+    setSelectedRevision(revision ?? null);
+    requestFocus(revision ? revisionNodeId(id, revision.index) : id);
   };
 
   const updateNodes = (convId: string, fn: (list: ChatNode[]) => ChatNode[]) => {
@@ -137,32 +218,211 @@ export function ChatTreeApp() {
     if (!c) return;
     setActiveConvId(id);
     setSearchQuery("");
+    setSelectedRevision(null);
+    setComposerMode("continue");
+    setPrefill({ text: "", token: ++tokenRef.current });
     const first = c.nodes[0]?.id ?? null;
     setRawSelectedId(first);
     if (first) requestFocus(first);
   };
 
-  const addFollowUp = (prompt: string, mode: FollowUpMode) => {
-    if (!selectedNode) return;
-    const parentId = mode === "regenerate" && selectedNode.parentId ? selectedNode.parentId : selectedNode.id;
-    const parent = nodes.find((n) => n.id === parentId) ?? selectedNode;
-    const id = nextNodeId(nodes);
+  /** 把攒下的 token 一次性写回：追问写顶层回答，修改写当前版本。 */
+  const flushStream = () => {
+    if (flushTimerRef.current !== null) {
+      window.clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+    const buf = streamRef.current;
+    streamRef.current = null;
+    if (!buf) return;
+    const { convId, id, revision, text } = buf;
+    updateNodes(convId, (list) =>
+      list.map((n) => {
+        if (n.id !== id) return n;
+        // 攒下的只是「这一批 token」，要追加到已有回答上；直接赋值会让文字每段互相覆盖。
+        if (!revision) return { ...n, answer: `${n.answer ?? ""}${text}`, pending: true };
+        const revs = [...(n.revisions ?? [])];
+        const i = Math.min(Math.max(n.activeRevision ?? revs.length - 1, 0), revs.length - 1);
+        const prior = revs[i]?.answer ?? "";
+        if (revs[i]) revs[i] = { ...revs[i]!, answer: `${prior}${text}`, pending: true };
+        return { ...n, answer: `${n.answer ?? ""}${text}`, revisions: revs, pending: true };
+      }),
+    );
+  };
+
+  const pushToken = (convId: string, id: string, revision: boolean, token: string) => {
+    const cur = streamRef.current;
+    if (cur && cur.convId === convId && cur.id === id && cur.revision === revision) cur.text += token;
+    else {
+      flushStream();
+      streamRef.current = { convId, id, revision, text: token };
+    }
+    if (flushTimerRef.current === null) {
+      flushTimerRef.current = window.setTimeout(flushStream, 60);
+    }
+  };
+
+  /** 收尾：写定最终回答 / 模型名，清掉生成中标记。 */
+  const settleNode = (convId: string, id: string, revision: boolean, answer: string, model: string, synthetic: boolean) => {
+    updateNodes(convId, (list) =>
+      list.map((n) => {
+        if (n.id !== id) return n;
+        if (!revision) return { ...n, answer, model, synthetic, pending: false };
+        const revs = [...(n.revisions ?? [])];
+        const i = Math.min(Math.max(n.activeRevision ?? revs.length - 1, 0), revs.length - 1);
+        if (revs[i]) revs[i] = { ...revs[i]!, answer, model, synthetic, pending: false };
+        return { ...n, answer, model, synthetic, pending: false, revisions: revs };
+      }),
+    );
+  };
+
+  const addFollowUp = async (prompt: string, mode: FollowUpMode, targetId?: string): Promise<boolean> => {
+    if (generatingRef.current) return false;
+
+    const convId = activeConv.id;
     const { time, date } = nowLabel();
-    const fresh: ChatNode = {
-      id,
-      parentId,
-      prompt,
-      answer: makeDemoAnswer(prompt, parent.prompt, mode),
-      model: "本地模板",
-      time,
-      date,
-      badge: mode === "regenerate" ? "换个问法" : "新追问",
-      synthetic: true,
-    };
-    // 如果挂在折叠节点下，先展开，否则新分支看不见。
-    updateNodes(activeConv.id, (list) => [...list.map((n) => (n.id === parentId && n.collapsed ? { ...n, collapsed: false } : n)), fresh]);
-    setRawSelectedId(id);
-    requestFocus(id);
+    const text = prompt.trim();
+    // 修改也要有内容：原问题已经预填，用户可以直接发送，但空问题不合法。
+    if (!text) return false;
+
+    generatingRef.current = true;
+    setModelError(null);
+    setGenerating(true);
+
+    const base = nodes.find((n) => n.id === (targetId ?? selectedId));
+    if (nodes.length > 0 && !base) {
+      generatingRef.current = false;
+      setGenerating(false);
+      return false;
+    }
+
+    let id = "";
+    let revision = false;
+    let messages: ModelMessage[] | null = null;
+    let fallback = "";
+
+    if (nodes.length === 0) {
+      // 空会话：第一问直接成为根节点，不凭空造一个「默认提问」。
+      id = nextNodeId(nodes);
+      const fresh: ChatNode = {
+        id,
+        parentId: null,
+        parentRevision: 0,
+        prompt: text,
+        answer: "",
+        model: "生成中…",
+        time,
+        date,
+        pending: true,
+      };
+      messages = buildModelMessages([], text, "continue");
+      fallback = makeDemoAnswer(text, "");
+      updateNodes(convId, () => [fresh]);
+      setRawSelectedId(id);
+      setSelectedRevision(null);
+      requestFocus(id);
+    } else if (mode === "revise" && base) {
+      // 修改：用编辑后的问题先落一个空的「生成中」版本，token 到达后逐字填进去。
+      revision = true;
+      id = base.id;
+      messages = buildModelMessages(pathTo(nodes, base.id), text, "revise", answerOf(base).answer);
+      fallback = makeRevisionAnswer(base, text);
+      setSelectedRevision(null);
+      setExpandedVersions((prev) => (prev.includes(base.id) ? prev : [...prev, base.id]));
+      updateNodes(convId, (list) =>
+        list.map((n) => (n.id === base.id ? withRevision(n, text, "", "生成中…", time, date, "修改") : n)),
+      );
+      setRawSelectedId(base.id);
+    } else if (base) {
+      // 追问：挂在当前节点下；若正在预览旧版，则这一问跟随那一版，继承它的后继树。
+      const parentId = base.id;
+      const parentRevision = previewRevision?.ownerId === base.id
+        ? previewRevision.index
+        : (base.activeRevision ?? 0);
+
+      id = nextNodeId(nodes);
+      const fresh: ChatNode = {
+        id,
+        parentId,
+        parentRevision,
+        prompt: text,
+        answer: "",
+        model: "生成中…",
+        time,
+        date,
+        pending: true,
+      };
+      messages = buildModelMessages(pathTo(nodes, parentId), text, "continue");
+      const followBase =
+        previewRevision?.ownerId === base.id && base.revisions?.[previewRevision.index]
+          ? { ...base, activeRevision: previewRevision.index }
+          : base;
+      fallback = makeDemoAnswer(text, answerOf(followBase).prompt);
+      // 如果挂在折叠节点下，先展开，否则新分支看不见。
+      updateNodes(convId, (list) => [
+        ...list.map((n) => (n.id === parentId && n.collapsed ? { ...n, collapsed: false } : n)),
+        fresh,
+      ]);
+      setRawSelectedId(id);
+      setSelectedRevision(null);
+      requestFocus(id);
+    }
+
+    if (!messages) {
+      generatingRef.current = false;
+      setGenerating(false);
+      return false;
+    }
+
+    // 调用方立即返回：提问已经上树、输入框可以马上清空，网络请求在后台流式写回。
+    const finalMessages: ModelMessage[] = messages;
+    void (async () => {
+      try {
+        const result = await streamModelAnswer(finalMessages, (token) => pushToken(convId, id, revision, token));
+        flushStream();
+        settleNode(convId, id, revision, result.answer, result.model, false);
+      } catch (error) {
+        flushStream();
+        settleNode(convId, id, revision, fallback, "本地模板", true);
+        setModelError(`${errorMessage(error)}，已回退到本地模板回答。`);
+      } finally {
+        generatingRef.current = false;
+        setGenerating(false);
+      }
+    })();
+
+    return true;
+  };
+
+  /** 右键 / 角标 / 面板按钮统一走这里：展开的伪分支直接进画布，不再是弹窗。 */
+  const toggleVersions = (id: string) => {
+    const target = nodes.find((n) => n.id === id);
+    if (!target?.revisions?.length) return;
+    setExpandedVersions((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    if (selectedRevision?.ownerId === id) setSelectedRevision(null);
+  };
+
+  /** 在伪分支卡片上「切回此版」：真正改写当前版本，但保留展开状态便于继续对照。 */
+  const restoreRevision = (ownerId: string, index: number) => {
+    updateNodes(activeConv.id, (list) => list.map((n) => (n.id === ownerId ? setActiveRevision(n, index) : n)));
+    setSelectedRevision(null);
+    setRawSelectedId(ownerId);
+    requestFocus(ownerId);
+  };
+
+  const toggleHidden = (id: string) => {
+    const target = nodes.find((n) => n.id === id);
+    if (!target) return;
+    const willHide = !target.hidden;
+    // 隐藏作用于整棵子树；反过来取消隐藏时，祖先也要一起解开，否则点了还是灰的。
+    const affected = new Set(
+      willHide ? [id] : [...pathTo(nodes, id).map((n) => n.id)],
+    );
+    if (willHide && filterHidden && selectedId && subtreeIds(nodes, id).has(selectedId) && target.parentId) {
+      setRawSelectedId(target.parentId);
+      setSelectedRevision(null);
+    }
+    updateNodes(activeConv.id, (list) => list.map((n) => (affected.has(n.id) ? { ...n, hidden: willHide } : n)));
   };
 
   const toggleCollapse = (id: string) => {
@@ -172,47 +432,71 @@ export function ChatTreeApp() {
     if (willCollapse && selectedId && subtreeIds(nodes, id).has(selectedId) && selectedId !== id) {
       setRawSelectedId(id);
     }
+    if (willCollapse && selectedRevision && subtreeIds(nodes, id).has(selectedRevision.ownerId)) {
+      setSelectedRevision(null);
+    }
     updateNodes(activeConv.id, (list) => list.map((n) => (n.id === id ? { ...n, collapsed: willCollapse } : n)));
   };
 
-  const deleteBranch = () => {
-    if (!selectedNode?.parentId) return;
-    const gone = subtreeIds(nodes, selectedNode.id);
-    const parentId = selectedNode.parentId;
+  const deleteBranch = (id?: string) => {
+    const target = nodes.find((n) => n.id === (id ?? selectedId));
+    if (!target?.parentId) return;
+    const gone = subtreeIds(nodes, target.id);
+    const parentId = target.parentId;
     updateNodes(activeConv.id, (list) => list.filter((n) => !gone.has(n.id)));
+    if (selectedRevision && gone.has(selectedRevision.ownerId)) setSelectedRevision(null);
+    setExpandedVersions((prev) => prev.filter((x) => !gone.has(x)));
     selectAndFocus(parentId);
   };
 
-  const toggleStar = () => {
-    if (!selectedNode) return;
-    updateNodes(activeConv.id, (list) => list.map((n) => (n.id === selectedNode.id ? { ...n, starred: !n.starred } : n)));
+  const copyAnswer = (id: string, override?: ChatNode | null) => {
+    const target = override ?? nodes.find((n) => n.id === id);
+    if (!target) return;
+    const a = answerOf(target);
+    if (navigator.clipboard?.writeText) void navigator.clipboard.writeText(a.answer);
+  };
+
+  /** 右键菜单的全部操作：先选中目标节点，再分派到对应的数据操作。 */
+  const nodeActions: NodeActions = {
+    followUp: (id) => {
+      setRawSelectedId(id);
+      setSelectedRevision(null);
+      setComposerMode("continue");
+      setPrefill({ text: "", token: ++tokenRef.current });
+    },
+    // 右键「修改这一问」不直接生成：选中目标、填入原问题，让用户先改。
+    revise: (id) => {
+      const target = nodes.find((n) => n.id === id);
+      if (!target) return;
+      setRawSelectedId(id);
+      setSelectedRevision(null);
+      setComposerMode("revise");
+      setPrefill({ text: answerOf(target).prompt, token: ++tokenRef.current });
+      setMobileAnswerOpen(true);
+    },
+    toggleVersions,
+    hide: (id) => toggleHidden(id),
+    collapse: (id) => toggleCollapse(id),
+    copy: (id) => copyAnswer(id),
+    remove: (id) => deleteBranch(id),
   };
 
   const newConversation = () => {
     const id = `conv-${Date.now()}`;
-    const { time, date } = nowLabel();
+    const { time } = nowLabel();
     const conv: Conversation = {
       id,
       title: "新会话",
       group: "今天",
       updated: time,
-      nodes: [
-        {
-          id: "n-root",
-          parentId: null,
-          prompt: "这是一次新对话的开场提问",
-          answer: "> 空会话已建好。在右下角输入追问，就会从这个根节点开始长出第一条分支；也可以双击左侧标题重命名。",
-          model: "本地模板",
-          time,
-          date,
-          synthetic: true,
-        },
-      ],
+      nodes: [],
     };
     setConversations((prev) => [conv, ...prev]);
     setActiveConvId(id);
-    setRawSelectedId("n-root");
-    requestFocus("n-root");
+    setRawSelectedId(null);
+    setSelectedRevision(null);
+    setComposerMode("continue");
+    setPrefill({ text: "", token: ++tokenRef.current });
   };
 
   const deleteConversation = (id: string) => {
@@ -222,6 +506,7 @@ export function ChatTreeApp() {
     if (id === activeConvId) {
       const next = rest[0]!;
       setActiveConvId(next.id);
+      setSelectedRevision(null);
       const first = next.nodes[0]?.id ?? null;
       setRawSelectedId(first);
       if (first) requestFocus(first);
@@ -238,7 +523,12 @@ export function ChatTreeApp() {
     setRawSelectedId(SAMPLE_CONVERSATIONS[0]!.nodes[0]!.id);
     setDirection("LR");
     setFocusPath(false);
+    setFilterHidden(false);
     setSearchQuery("");
+    setExpandedVersions([]);
+    setSelectedRevision(null);
+    setComposerMode("continue");
+    setPrefill({ text: "", token: ++tokenRef.current });
     requestFocus(SAMPLE_CONVERSATIONS[0]!.nodes[0]!.id);
   };
 
@@ -254,8 +544,8 @@ export function ChatTreeApp() {
   // 键盘：↑ 父 / ↓ 子 / ←→ 兄弟，+ - 0 缩放，f 聚焦路径，Esc 清搜索。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (t?.closest("input, textarea, [contenteditable='true']")) return;
+      // 有些合成事件的 target 不是 Element（如 window），closest 不存在，直接放行。
+      if (e.target instanceof Element && e.target.closest("input, textarea, [contenteditable='true']")) return;
       if (!selectedNode) return;
       const siblings = nodes.filter((n) => n.parentId === selectedNode.parentId);
       const idx = siblings.findIndex((n) => n.id === selectedNode.id);
@@ -290,9 +580,18 @@ export function ChatTreeApp() {
         case "F":
           setFocusPath((v) => !v);
           break;
+        case "h":
+        case "H":
+          setFilterHidden((v) => !v);
+          break;
+        case "v":
+        case "V":
+          toggleVersions(selectedNode.id);
+          break;
         case "Escape":
           setSearchQuery("");
           setFocusPath(false);
+          setSelectedRevision(null);
           setMobileListOpen(false);
           setMobileAnswerOpen(false);
           break;
@@ -377,8 +676,10 @@ export function ChatTreeApp() {
 
         <TreeCanvas
           conversation={activeConv}
+          displayNodes={displayNodes}
           layout={layout}
           selectedId={selectedId}
+          selectedRevision={previewRevision}
           pathIds={pathIds}
           focusPath={focusPath}
           matchIds={matchIds}
@@ -386,15 +687,24 @@ export function ChatTreeApp() {
           direction={direction}
           focusRequest={focusRequest}
           viewCommand={viewCommand}
-          onSelect={(id) => {
+          filterHidden={filterHidden}
+          hiddenCount={hiddenBranchCount(nodes)}
+          hiddenIds={hiddenSet}
+          expandedVersions={expandedSet}
+          onFilterHiddenChange={setFilterHidden}
+          onSelect={(id, revision) => {
             setRawSelectedId(id);
+            setSelectedRevision(revision ?? null);
+            if (revision) requestFocus(revisionNodeId(id, revision.index));
             setMobileAnswerOpen(true);
           }}
-          onToggleCollapse={toggleCollapse}
           onDirectionChange={setDirection}
           onSearchChange={setSearchQuery}
           onFocusPathChange={setFocusPath}
           onExportJson={exportJson}
+          onExportPath={exportPath}
+          onRestoreRevision={restoreRevision}
+          nodeActions={nodeActions}
         />
 
         {/* 右：宽屏常驻 / 窄屏底部抽屉（点节点自动升起） */}
@@ -417,17 +727,22 @@ export function ChatTreeApp() {
           </div>
           <div className="min-h-0 flex-1">
             <AnswerPanel
-              conversation={activeConv}
-              node={selectedNode}
-              chain={chain}
-              childrenNodes={childrenNodes}
+              node={panelNode}
               ordinal={ordinal}
-              onSelect={selectAndFocus}
+              chainLength={chain.length}
+              composerMode={composerMode}
+              versionsExpanded={!!selectedId && expandedSet.has(selectedId)}
+              previewVersion={previewRevision?.index ?? null}
+              prefill={prefill}
+              generating={generating}
+              modelError={modelError}
+              onDismissModelError={() => setModelError(null)}
+              onComposerModeChange={changeComposerMode}
               onFollowUp={addFollowUp}
-              onExportPath={exportPath}
-              onDelete={deleteBranch}
-              onToggleCollapse={() => selectedId && toggleCollapse(selectedId)}
-              onToggleStar={toggleStar}
+              onRevise={(text) => (selectedId ? addFollowUp(text, "revise", selectedId) : Promise.resolve(false))}
+              onCopy={() => selectedId && copyAnswer(selectedId, panelNode)}
+              onToggleVersions={() => selectedId && toggleVersions(selectedId)}
+              onExitPreview={() => setSelectedRevision(null)}
             />
           </div>
         </div>
@@ -450,6 +765,7 @@ export function ChatTreeApp() {
           </span>
         </button>
       )}
+
     </div>
   );
 }

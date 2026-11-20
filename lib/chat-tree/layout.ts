@@ -16,14 +16,14 @@ export const PAD = 56;
 
 export interface PositionedNode {
   id: string;
+  /** 版本伪节点在布局层也留个标记，便于连线区别对待。 */
+  kind?: "revision";
   x: number;
   y: number;
   w: number;
   h: number;
   depth: number;
   childCount: number;
-  siblingIndex: number;
-  siblingCount: number;
 }
 
 export interface LayoutEdge {
@@ -31,10 +31,10 @@ export interface LayoutEdge {
   from: string;
   to: string;
   d: string;
+  /** 版本伪分支用虚线和暖色区分。 */
+  kind: "question" | "revision";
   /** 分叉点的汇合圆点。 */
   junction: { x: number; y: number } | null;
-  /** 子节点入口处的分支序号圆点（只有兄弟 > 1 时才画）。 */
-  marker: { x: number; y: number; index: number } | null;
 }
 
 export interface TreeLayout {
@@ -46,6 +46,34 @@ export interface TreeLayout {
 }
 
 const round = (n: number) => Math.round(n * 10) / 10;
+
+/**
+ * 把一串正交折点转成带圆角拐点的路径：每个拐点用一小段二次曲线切过去，
+ * 而不是留一个尖锐的直角。半径会自动收敛到相邻线段长度的一半，短边也不会反折。
+ */
+function roundedPath(points: { x: number; y: number }[], radius = 14): string {
+  if (points.length < 2) return "";
+  const [first, ...rest] = points;
+  let d = `M ${round(first!.x)} ${round(first!.y)}`;
+  for (let i = 0; i < rest.length - 1; i += 1) {
+    const prev = points[i]!;
+    const cur = rest[i]!;
+    const next = rest[i + 1]!;
+    const inLen = Math.hypot(cur.x - prev.x, cur.y - prev.y);
+    const outLen = Math.hypot(next.x - cur.x, next.y - cur.y);
+    const r = Math.min(radius, inLen / 2, outLen / 2);
+    if (r < 0.6) {
+      d += ` L ${round(cur.x)} ${round(cur.y)}`;
+      continue;
+    }
+    const enter = { x: cur.x + ((prev.x - cur.x) / inLen) * r, y: cur.y + ((prev.y - cur.y) / inLen) * r };
+    const leave = { x: cur.x + ((next.x - cur.x) / outLen) * r, y: cur.y + ((next.y - cur.y) / outLen) * r };
+    d += ` L ${round(enter.x)} ${round(enter.y)} Q ${round(cur.x)} ${round(cur.y)} ${round(leave.x)} ${round(leave.y)}`;
+  }
+  const last = rest[rest.length - 1]!;
+  d += ` L ${round(last.x)} ${round(last.y)}`;
+  return d;
+}
 
 export function layoutTree(nodes: ChatNode[], direction: TreeDirection): TreeLayout {
   const map = new Map(nodes.map((n) => [n.id, n]));
@@ -66,37 +94,36 @@ export function layoutTree(nodes: ChatNode[], direction: TreeDirection): TreeLay
   }
 
   const slot = direction === "LR" ? NODE_H + GAP_Y : NODE_W + GAP_X;
-  const placed = new Map<string, { center: number; depth: number; siblingIndex: number; siblingCount: number }>();
+  const placed = new Map<string, { center: number; depth: number }>();
   let cursor = 0;
 
-  const walk = (node: ChatNode, depth: number, siblingIndex: number, siblingCount: number): number => {
+  const walk = (node: ChatNode, depth: number): number => {
     const kids = children.get(node.id) ?? [];
     let center: number;
     if (kids.length === 0) {
       center = cursor * slot;
       cursor += 1;
     } else {
-      const centers = kids.map((k, i) => walk(k, depth + 1, i, kids.length));
+      const centers = kids.map((k) => walk(k, depth + 1));
       center = (centers[0]! + centers[centers.length - 1]!) / 2;
     }
-    placed.set(node.id, { center, depth, siblingIndex, siblingCount });
+    placed.set(node.id, { center, depth });
     return center;
   };
 
-  roots.forEach((r, i) => walk(r, 0, i, roots.length));
+  roots.forEach((r) => walk(r, 0));
 
   const positioned: PositionedNode[] = [];
   for (const [id, p] of placed) {
     positioned.push({
       id,
+      kind: map.get(id)?.revisionRef ? "revision" : undefined,
       x: direction === "LR" ? PAD + p.depth * (NODE_W + GAP_X) : PAD + p.center - NODE_W / 2,
       y: direction === "LR" ? PAD + p.center - NODE_H / 2 : PAD + p.depth * (NODE_H + GAP_Y),
       w: NODE_W,
       h: NODE_H,
       depth: p.depth,
       childCount: (children.get(id) ?? []).length,
-      siblingIndex: p.siblingIndex,
-      siblingCount: p.siblingCount,
     });
   }
   const byId = new Map(positioned.map((n) => [n.id, n]));
@@ -106,38 +133,44 @@ export function layoutTree(nodes: ChatNode[], direction: TreeDirection): TreeLay
     const kids = (children.get(parent.id) ?? []).map((k) => byId.get(k.id)).filter((n): n is PositionedNode => !!n);
     if (!kids.length) continue;
 
+    // 汇合点只属于真实追问分支；版本伪节点不参与。
+    const realKids = kids.filter((k) => k.kind !== "revision");
     const junction =
-      kids.length > 1
+      realKids.length > 1
         ? direction === "LR"
           ? { x: parent.x + parent.w + Math.min(46, GAP_X / 2), y: parent.y + parent.h / 2 }
           : { x: parent.x + parent.w / 2, y: parent.y + parent.h + Math.min(38, GAP_Y / 2) }
         : null;
 
-    kids.forEach((child, i) => {
+    kids.forEach((child) => {
       let d: string;
-      let marker: LayoutEdge["marker"] = null;
       if (direction === "LR") {
         const outX = parent.x + parent.w;
         const outY = parent.y + parent.h / 2;
         const cy = child.y + child.h / 2;
         const trunkX = junction?.x ?? child.x;
-        d =
-          Math.abs(cy - outY) < 0.5
-            ? `M ${round(outX)} ${round(outY)} H ${round(child.x)}`
-            : `M ${round(outX)} ${round(outY)} H ${round(trunkX)} V ${round(cy)} H ${round(child.x)}`;
-        if (kids.length > 1) marker = { x: child.x - 17, y: cy, index: i + 1 };
+        const pts = Math.abs(cy - outY) < 0.5
+          ? [{ x: outX, y: outY }, { x: child.x, y: cy }]
+          : [{ x: outX, y: outY }, { x: trunkX, y: outY }, { x: trunkX, y: cy }, { x: child.x, y: cy }];
+        d = roundedPath(pts);
       } else {
         const outX = parent.x + parent.w / 2;
         const outY = parent.y + parent.h;
         const cx = child.x + child.w / 2;
         const trunkY = junction?.y ?? child.y;
-        d =
-          Math.abs(cx - outX) < 0.5
-            ? `M ${round(outX)} ${round(outY)} V ${round(child.y)}`
-            : `M ${round(outX)} ${round(outY)} V ${round(trunkY)} H ${round(cx)} V ${round(child.y)}`;
-        if (kids.length > 1) marker = { x: cx, y: child.y - 17, index: i + 1 };
+        const pts = Math.abs(cx - outX) < 0.5
+          ? [{ x: outX, y: outY }, { x: cx, y: child.y }]
+          : [{ x: outX, y: outY }, { x: outX, y: trunkY }, { x: cx, y: trunkY }, { x: cx, y: child.y }];
+        d = roundedPath(pts);
       }
-      edges.push({ id: `${parent.id}->${child.id}`, from: parent.id, to: child.id, d, junction, marker });
+      edges.push({
+        id: `${parent.id}->${child.id}`,
+        from: parent.id,
+        to: child.id,
+        d,
+        junction,
+        kind: child.kind === "revision" ? "revision" : "question",
+      });
     });
   }
 

@@ -1,8 +1,11 @@
 import type { ChatNode, Conversation } from "./types";
 
 /**
- * 演示数据：刻意做出「一处提问长出多条分支」的形状，
- * 用来说明线性聊天记录丢掉的东西 —— 分支、重生成、以及从根到任意节点的追问链。
+ * 演示数据：刻意做出「一处提问长出多条追问」的形状，
+ * 用来说明线性聊天记录丢掉的东西 —— 追问、以及从根到任意节点的回溯链。
+ * 根节点 q1 的两版记录着两次不同的问法：v1 问得含糊，v2 补上「干净复刻」才算定稿；
+ * 展开后两版平级、箭头串到当前版，各自的后继树互不继承（q5 跟 v1，q2 跟 v2）。
+ * q8 / d4 标记为隐藏分支，连同后代一起灰显，工具栏开关可进一步过滤。
  */
 
 type NodeSeed = Omit<ChatNode, "model" | "date" | "time"> & Partial<Pick<ChatNode, "model" | "date" | "time">>;
@@ -22,18 +25,55 @@ const rustNodes = makeNodes(
       id: "q1",
       parentId: null,
       prompt: "把 TS 的 canvasRender2 干净复刻到 Rust，先帮我拆一下模块边界？",
-      time: "09:12",
-      answer: `先别急着搬代码。TS 那边其实是三层，边界比文件名更清楚：
+      time: "09:41",
+      /** 顶层字段展示的是当前激活版（第二版），与 activeRevision 保持一致。 */
+      answer: `按落地顺序，不分类：
 
-1. **类型层**：\`Fc\` / \`TFc\` 描述「一个可渲染的东西」，\`children\` 是 \`Vec<Fc>\`；
-2. **树层**：声明式地把 children 组装成一棵树，渲染时只做遍历；
-3. **绘制层**：拿到树之后按层序调用 canvas 指令。
+1. 先把 TS 的 \`Fc\` / \`TFc\` 逐字段抄成 Rust 类型，children 用 \`Vec<Fc>\`；
+2. 写一个只打印树结构的 \`render\` 占位实现，验证构造顺序；
+3. 补 \`for_each\`，确认它返回 \`Vec<Fc>\` 而不是新类型；
+4. 接上真实绘制，逐项对照 TS 输出快照；
+5. 最后才考虑 \`Rc\` / 借用 / 缓存。
 
-Rust 里最容易翻车的是第 1 层：所有权会让 TS 那种随手 clone 的写法直接不成立。**建议先原样复刻类型语义**（children 保持 Vec<Fc>），再谈生命周期优化。`,
+**第 2 步别跳过**：只看类型能通过编译，但运行时树形不对时，后面全要返工。`,
+      synthetic: true,
+      /** 版本 = 编辑这一问后的新版本：每版记自己的问题，不长成新的树节点。 */
+      revisions: [
+        {
+          id: "q1-r1",
+          prompt: "把 TS 的 canvasRender2 复刻到 Rust，模块边界怎么拆？",
+          answer: `先别急着搬代码。TS 那边其实是三层，边界比文件名更清楚：类型层、树层、绘制层。Rust 里最容易翻车的是类型层：所有权会让 TS 那种随手 clone 的写法直接不成立。`,
+          model: "Claude Sonnet 4.5",
+          time: "09:12",
+          date: "2026-11-06",
+          reason: "首次提问",
+        },
+        {
+          id: "q1-r2",
+          prompt: "把 TS 的 canvasRender2 干净复刻到 Rust，先帮我拆一下模块边界？",
+          answer: `按落地顺序，不分类：
+
+1. 先把 TS 的 \`Fc\` / \`TFc\` 逐字段抄成 Rust 类型，children 用 \`Vec<Fc>\`；
+2. 写一个只打印树结构的 \`render\` 占位实现，验证构造顺序；
+3. 补 \`for_each\`，确认它返回 \`Vec<Fc>\` 而不是新类型；
+4. 接上真实绘制，逐项对照 TS 输出快照；
+5. 最后才考虑 \`Rc\` / 借用 / 缓存。
+
+**第 2 步别跳过**：只看类型能通过编译，但运行时树形不对时，后面全要返工。`,
+          model: "Claude Sonnet 4.5",
+          time: "09:41",
+          date: "2026-11-06",
+          reason: "修改 · 补上「干净复刻」与落地顺序",
+          synthetic: true,
+        },
+      ],
+      activeRevision: 1,
     },
     {
       id: "q2",
       parentId: "q1",
+      /** 跟随 q1 的当前版 v2；与 q5 的 v1 后继树互不继承。 */
+      parentRevision: 1,
       prompt: "Fc 和 TFc 到底该怎么映射？children 必须是 Vec<Fc> 吗？",
       time: "09:18",
       answer: `必须。\`Vec<Fc>\` 不只是容器类型，它决定了三件事：
@@ -63,7 +103,6 @@ fn for_each<T>(items: impl IntoIterator<Item = T>, f: impl Fn(&T) -> Fc) -> Fc {
       id: "q4",
       parentId: "q2",
       prompt: "先别改代码，画一下 RSX 展开后的树形结构",
-      badge: "换角度",
       time: "09:31",
       answer: `好，用一棵树来看更直观：
 
@@ -83,8 +122,9 @@ Root
     {
       id: "q5",
       parentId: "q1",
+      /** 这一支是在 v1 回答之后追问出来的，展开版本后挂在 v1 伪节点下。 */
+      parentRevision: 0,
       prompt: "换成保留 RSX 的方案，代价是什么？",
-      badge: "分支 B",
       time: "09:38",
       model: "GPT-5.1",
       answer: `可以共存，但要认清代价：
@@ -96,26 +136,9 @@ Root
 如果目标是「接近 ooc 的函数式声明式写法」，我更倾向**先把手写树做对，再让 RSX 只是一层语法糖**。`,
     },
     {
-      id: "q6",
-      parentId: "q1",
-      prompt: "重新生成上一版回答，别用「三层」这个框架，直接给落地顺序",
-      badge: "重新生成",
-      time: "09:41",
-      answer: `按落地顺序，不分类：
-
-1. 先把 TS 的 \`Fc\` / \`TFc\` 逐字段抄成 Rust 类型，children 用 \`Vec<Fc>\`；
-2. 写一个只打印树结构的 \`render\` 占位实现，验证构造顺序；
-3. 补 \`for_each\`，确认它返回 \`Vec<Fc>\` 而不是新类型；
-4. 接上真实绘制，逐项对照 TS 输出快照；
-5. 最后才考虑 \`Rc\` / 借用 / 缓存。
-
-**第 2 步别跳过**：只看类型能通过编译，但运行时树形不对时，后面全要返工。`,
-    },
-    {
       id: "q7",
       parentId: "q3",
       prompt: "给个最小可编译的骨架，只要类型和 for_each",
-      badge: "代码",
       time: "09:47",
       answer: `最小骨架（刻意不做任何优化）：
 
@@ -145,8 +168,8 @@ where
       id: "q8",
       parentId: "q3",
       prompt: "不用泛型，能不能用 trait object 把 for_each 抹平？",
-      badge: "换思路",
       time: "09:53",
+      hidden: true,
       answer: `能，但会丢掉 TS 那边的语义：
 
 \`Box<dyn Fn(&T) -> Fc>\` 让每个 child 变成动态分发，\`Fc\` 也从「数据」变成「数据 + 行为」。后果是：
@@ -185,7 +208,6 @@ where
       id: "q11",
       parentId: "q9",
       prompt: "把差异整理成待办清单，按优先级排",
-      badge: "总结",
       time: "10:42",
       answer: `按「先保证语义、再优化体验」排：
 
@@ -196,7 +218,6 @@ where
 5. 最后再评估 \`Rc\` / 借用与缓存。
 
 > 前三项做完之前不要动渲染层 —— 类型对了但树形错了，是最难查的一类偏差。`,
-      starred: true,
     },
   ],
   { model: "Claude Sonnet 4.5", date: "2026-11-06" },
@@ -247,7 +268,6 @@ HI = f(T, RH)   // 高温段用 Rothfusz 回归式，低温段换成风寒指数
       id: "c4",
       parentId: "c1",
       prompt: "换个角度：如果我最怕的是回南天和霉变呢？",
-      badge: "换角度",
       time: "08:52",
       model: "GPT-5.1",
       answer: `那排序依据要从「温度」换成**连续高湿天数**：
@@ -275,7 +295,6 @@ HI = f(T, RH)   // 高温段用 Rothfusz 回归式，低温段换成风寒指数
       id: "c6",
       parentId: "c2",
       prompt: "高温段和低温段的分界取多少度合适？",
-      badge: "追问细节",
       time: "09:15",
       answer: `经验上 **26°C** 作为切换点比较稳：之上用热指数（湿度放大热），之下转风寒 / 湿冷修正（湿度放大冷）。中间 20–26°C 是舒适区，两套公式的差异都很小，硬切也不会造成排名跳变。`,
     },
@@ -314,8 +333,8 @@ const dftNodes = makeNodes(
       id: "d4",
       parentId: "d1",
       prompt: "换个讲法：用颜色或图像来比喻？",
-      badge: "换讲法",
       time: "16:41",
+      hidden: true,
       answer: `把频谱想成**一盒按音高排好的颜料**：任何一段声音都是这盒颜料调出来的。DFT 做的事，就是拿一组标准色卡去比对，算出每种颜料放了多少。逆变换则是按这个配方把颜料重新调回原来的声音。`,
     },
     {
@@ -365,7 +384,6 @@ A: ...
       id: "r4",
       parentId: "r3",
       prompt: "一句话总结这套方法",
-      badge: "总结",
       time: "21:28",
       answer: `> 不要收藏别人的结论，要收藏自己被解决的问题；再把问题之间连起来。`,
     },

@@ -1,35 +1,75 @@
 "use client";
 
-import { CaretDown, CaretRight, Star } from "@phosphor-icons/react/dist/ssr";
+import { type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { CaretDown, CaretRight } from "@phosphor-icons/react/dist/ssr";
 import { cn } from "@/components/ui";
 import type { PositionedNode } from "@/lib/chat-tree/layout";
 import type { ChatNode, TreeDirection } from "@/lib/chat-tree/types";
 
-/** 类图式的「类框」：标题栏 / 提问区 / 元信息栏，三段之间用分隔线切开。 */
+/** UML 端口圆点：伪分支和真实分支共用同一套「接线」语言。 */
+function Ports({ direction, selected, revision }: { direction: TreeDirection; selected: boolean; revision?: boolean }) {
+  const cls = cn(
+    "pointer-events-none absolute h-2 w-2 rounded-full border bg-surface",
+    revision ? "border-acc-yellow-fg/70" : selected ? "border-ink" : "border-line-strong",
+  );
+  return (
+    <>
+      <span className={cn(cls, direction === "LR" ? "-left-[5px] top-1/2 -translate-y-1/2" : "-top-[5px] left-1/2 -translate-x-1/2")} />
+      <span className={cn(cls, direction === "LR" ? "-right-[5px] top-1/2 -translate-y-1/2" : "-bottom-[5px] left-1/2 -translate-x-1/2")} />
+    </>
+  );
+}
+
+/**
+ * 版本链专用的另外两个端口。整体横向时后继走左/右，版本链就走上/下；
+ * 整体纵向时反过来 —— 两组线永不共用端子，也就不会互相压住。
+ */
+function VersionPorts({ direction }: { direction: TreeDirection }) {
+  const cls = "pointer-events-none absolute h-[7px] w-[7px] rounded-full border border-acc-yellow-fg/70 bg-surface";
+  return (
+    <>
+      <span className={cn(cls, direction === "LR" ? "-top-[4px] left-1/2 -translate-x-1/2" : "-left-[4px] top-1/2 -translate-y-1/2")} />
+      <span className={cn(cls, direction === "LR" ? "-bottom-[4px] left-1/2 -translate-x-1/2" : "-right-[4px] top-1/2 -translate-y-1/2")} />
+    </>
+  );
+}
+
+function activateOnKey(e: ReactKeyboardEvent<HTMLDivElement>, fn: () => void) {
+  if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault();
+    fn();
+  }
+}
+
+/** 类图式的「类框」：卡片上只放问题本身，底部一行模型 · 时间。 */
 export function NodeCard({
   node,
   pos,
-  ordinal,
   selected,
   onPath,
   dimmed,
   matched,
-  hiddenCount,
+  hidden,
+  versionPorts,
   direction,
   onSelect,
   onToggleCollapse,
+  onContextMenu,
 }: {
   node: ChatNode;
   pos: PositionedNode;
-  ordinal: number;
   selected: boolean;
   onPath: boolean;
   dimmed: boolean;
   matched: boolean;
-  hiddenCount: number;
+  /** 自身或祖先被标记隐藏 —— 整棵子树一起灰显。 */
+  hidden: boolean;
+  /** 展开版本链时，当前版本节点也要补上上/下（或左/右）端子。 */
+  versionPorts: boolean;
   direction: TreeDirection;
   onSelect: () => void;
   onToggleCollapse: () => void;
+  onContextMenu: (e: ReactMouseEvent) => void;
 }) {
   const stripe = selected
     ? "bg-ink"
@@ -42,59 +82,49 @@ export function NodeCard({
   return (
     <div
       data-tree-node="1"
-      className={cn("group absolute", dimmed && "opacity-30")}
+      className={cn("group absolute", hidden && "opacity-35", dimmed && "opacity-25")}
       style={{ left: pos.x, top: pos.y, width: pos.w, height: pos.h }}
     >
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onSelect}
+        onKeyDown={(e) => activateOnKey(e, onSelect)}
+        onContextMenu={onContextMenu}
+        title="点击查看回答 · 右键更多操作"
         className={cn(
-          "relative flex h-full w-full flex-col overflow-hidden rounded-[5px] border bg-surface text-left transition-[border-color,box-shadow,transform] duration-150",
-          selected
-            ? "border-ink shadow-[0_10px_26px_-12px_rgba(0,0,0,0.55)] ring-2 ring-ink/20"
-            : matched
-              ? "border-acc-yellow-fg shadow-sm hover:-translate-y-0.5"
-              : onPath
-                ? "border-acc-blue-fg/70 shadow-sm hover:-translate-y-0.5"
-                : "border-line-strong shadow-sm hover:-translate-y-0.5 hover:border-faint",
+          "relative flex h-full w-full cursor-pointer flex-col overflow-hidden rounded-[11px] border bg-surface text-left outline-none transition-[border-color,box-shadow,transform] duration-150 focus-visible:ring-2 focus-visible:ring-ink/30",
+          hidden
+            ? "border-line shadow-none hover:border-line-strong"
+            : selected
+              ? "border-ink shadow-[0_10px_26px_-12px_rgba(0,0,0,0.55)] ring-2 ring-ink/20"
+              : matched
+                ? "border-acc-yellow-fg shadow-sm hover:-translate-y-0.5"
+                : onPath
+                  ? "border-acc-blue-fg/70 shadow-sm hover:-translate-y-0.5"
+                  : "border-line shadow-sm hover:-translate-y-0.5 hover:border-line-strong",
         )}
       >
         <span className={cn("absolute left-0 top-0 h-full w-[3px]", stripe)} />
 
-        {/* 标题栏 */}
-        <span className="flex h-[27px] shrink-0 items-center gap-1.5 border-b border-line bg-surface-mute/70 pl-3 pr-2">
-          <span className="font-mono text-[10px] font-semibold tracking-wider text-muted">Q{String(ordinal).padStart(2, "0")}</span>
-          {node.badge && (
-            <span className="truncate rounded-[3px] bg-acc-orange-bg px-1.5 py-[1px] text-[9.5px] font-medium text-acc-orange-fg">
-              {node.badge}
-            </span>
-          )}
-          {pos.siblingCount > 1 && !node.badge && (
-            <span className="rounded-[3px] bg-acc-blue-bg px-1.5 py-[1px] font-mono text-[9.5px] text-acc-blue-fg">
-              分支 {String.fromCharCode(64 + pos.siblingIndex + 1)}
-            </span>
-          )}
-          <span className="ml-auto shrink-0 font-mono text-[9.5px] text-faint">{node.time}</span>
-        </span>
-
         {/* 提问区 */}
-        <span className="flex min-h-0 flex-1 items-start px-3 py-2">
+        <span className="flex min-h-0 flex-1 items-start px-3 py-2.5">
           <span className="line-clamp-3 text-[12.5px] font-medium leading-[1.55] text-ink">{node.prompt}</span>
         </span>
 
-        {/* 元信息栏 */}
+        {/* 元信息栏：模型 · 时间 */}
         <span className="flex h-[25px] shrink-0 items-center gap-1.5 border-t border-line bg-canvas/60 px-2.5 text-[10px] text-faint">
           <span className="truncate font-mono">{node.model}</span>
-          {node.starred && <Star size={10} weight="fill" className="shrink-0 text-acc-yellow-fg" />}
-          <span className="ml-auto flex shrink-0 items-center gap-1">
-            {node.collapsed ? (
-              <span className="rounded-[3px] bg-acc-yellow-bg px-1.5 py-[1px] font-mono text-acc-yellow-fg">+{hiddenCount} 折叠</span>
-            ) : (
-              <span className="font-mono">{pos.childCount} 后续</span>
-            )}
-          </span>
+          {node.pending ? (
+            <span className="ml-auto flex shrink-0 items-center gap-1 font-mono">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-acc-blue-fg" />
+              生成中
+            </span>
+          ) : (
+            <span className="ml-auto shrink-0 font-mono">{node.time}</span>
+          )}
         </span>
-      </button>
+      </div>
 
       {/* 折叠 / 展开：悬停才出现，不干扰点击选中 */}
       {pos.childCount > 0 || node.collapsed ? (
@@ -112,21 +142,96 @@ export function NodeCard({
         </button>
       ) : null}
 
-      {/* UML 端口圆点 */}
-      <span
+      <Ports direction={direction} selected={selected} />
+      {versionPorts && <VersionPorts direction={direction} />}
+    </div>
+  );
+}
+
+/**
+ * 回答版本的「伪节点」：与提问卡片**同层**，用虚线框和暖色与真实分支区分。
+ * 它不是一次新提问，所以没有 Q 序号；箭头指向下一版，终点是当前版。
+ */
+export function RevisionCard({
+  node,
+  pos,
+  selected,
+  isCurrent,
+  dimmed,
+  matched,
+  hidden,
+  direction,
+  onSelect,
+  onRestore,
+}: {
+  node: ChatNode;
+  pos: PositionedNode;
+  selected: boolean;
+  isCurrent: boolean;
+  dimmed: boolean;
+  matched: boolean;
+  hidden: boolean;
+  direction: TreeDirection;
+  onSelect: () => void;
+  onRestore: () => void;
+}) {
+  const index = node.revisionRef?.index ?? 0;
+  return (
+    <div
+      data-tree-node="1"
+      data-revision-node="1"
+      className={cn("group absolute", hidden && "opacity-35", dimmed && "opacity-25")}
+      style={{ left: pos.x, top: pos.y, width: pos.w, height: pos.h }}
+    >
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onSelect}
+        onKeyDown={(e) => activateOnKey(e, onSelect)}
+        title="点击预览这一版的问题与回答 · 与当前版本平级，箭头指向下一版"
         className={cn(
-          "pointer-events-none absolute h-2 w-2 rounded-full border bg-surface",
-          selected ? "border-ink" : "border-line-strong",
-          direction === "LR" ? "-left-[5px] top-1/2 -translate-y-1/2" : "-top-[5px] left-1/2 -translate-x-1/2",
+          "relative flex h-full w-full cursor-pointer flex-col overflow-hidden rounded-[11px] border border-dashed bg-acc-yellow-bg/20 text-left outline-none transition-[border-color,box-shadow,transform] duration-150 focus-visible:ring-2 focus-visible:ring-acc-yellow-fg/30",
+          selected
+            ? "border-acc-yellow-fg shadow-[0_10px_24px_-14px_rgba(149,100,0,0.6)] ring-2 ring-acc-yellow-fg/20"
+            : matched
+              ? "border-acc-yellow-fg"
+              : "border-acc-yellow-fg/50 hover:-translate-y-0.5 hover:border-acc-yellow-fg",
         )}
-      />
-      <span
-        className={cn(
-          "pointer-events-none absolute h-2 w-2 rounded-full border bg-surface",
-          selected ? "border-ink" : "border-line-strong",
-          direction === "LR" ? "-right-[5px] top-1/2 -translate-y-1/2" : "-bottom-[5px] left-1/2 -translate-x-1/2",
-        )}
-      />
+      >
+        <span className="absolute left-0 top-0 h-full w-[3px] bg-acc-yellow-fg" />
+
+        {/* 提问区 */}
+        <span className="flex min-h-0 flex-1 items-start px-3 py-2.5">
+          <span className="line-clamp-3 text-[12px] font-medium leading-[1.55] text-ink">{node.prompt}</span>
+        </span>
+
+        {/* 元信息栏：vN · 模型 · 时间 + 切回入口 */}
+        <span className="flex h-[25px] shrink-0 items-center gap-1.5 border-t border-dashed border-acc-yellow-fg/40 bg-canvas/50 px-2.5 font-mono text-[10px] text-faint">
+          <span className={cn("shrink-0 rounded-[3px] px-1 font-semibold", isCurrent ? "bg-acc-yellow-bg text-acc-yellow-fg" : "bg-acc-yellow-fg text-white")}>
+            v{index + 1}
+          </span>
+          <span className="min-w-0 truncate">{node.time}</span>
+          <span className="ml-auto shrink-0">
+            {isCurrent ? (
+              <span className="text-[9px] text-acc-yellow-fg">当前版</span>
+            ) : (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRestore();
+                }}
+                className="text-[9.5px] text-acc-yellow-fg hover:underline"
+              >
+                切回此版
+              </button>
+            )}
+          </span>
+        </span>
+      </div>
+
+      <Ports direction={direction} selected={selected} revision />
+      <VersionPorts direction={direction} />
     </div>
   );
 }
