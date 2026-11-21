@@ -11,6 +11,7 @@ import {
 } from "react";
 import {
   ArrowRight,
+  Bug,
   CaretDown,
   DotsThree,
   DownloadSimple,
@@ -57,6 +58,8 @@ export interface NodeActions {
   collapse: (id: string) => void;
   copy: (id: string) => void;
   remove: (id: string) => void;
+  /** 批准 / 撤销把历史版本下的子树跟随到当前版。 */
+  follow: (id: string, follow: boolean) => void;
 }
 
 interface View {
@@ -91,6 +94,7 @@ export function TreeCanvas({
   onExportPath,
   onRestoreRevision,
   nodeActions,
+  onOpenDev,
 }: {
   conversation: Conversation;
   /** 真实节点 + 已展开的版本伪节点，和 layout 一一对应。 */
@@ -120,6 +124,7 @@ export function TreeCanvas({
   onExportPath: () => void;
   onRestoreRevision: (ownerId: string, index: number) => void;
   nodeActions: NodeActions;
+  onOpenDev: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const minimapRef = useRef<SVGSVGElement>(null);
@@ -338,11 +343,24 @@ export function TreeCanvas({
 
   const nodeMap = useMemo(() => indexNodes(displayNodes), [displayNodes]);
 
+  /** 需要画版本链的提问：手动展开的 + 因有子树挂载而必须派生伪节点的。 */
+  const versionOwners = useMemo(() => {
+    const owners = new Set(expandedVersions);
+    for (const node of displayNodes) if (node.revisionRef) owners.add(node.revisionRef.ownerId);
+    return owners;
+  }, [displayNodes, expandedVersions]);
+
+  /** 挂在历史版本下的子树（含版本卡片本身），节点、连线、小地图共用同一份灰显集合。 */
+  const archivedSet = useMemo(
+    () => new Set(displayNodes.filter((n) => n.versionState === "archived").map((n) => n.id)),
+    [displayNodes],
+  );
+
   /** 版本链：按版本顺序把相邻两版连起来，终点是当前版本所在的原节点。 */
   const versionLinks = useMemo(() => {
     const links: { id: string; from: PositionedNode; to: PositionedNode }[] = [];
     for (const node of conversation.nodes) {
-      if (!expandedVersions.has(node.id) || !node.revisions?.length) continue;
+      if (!versionOwners.has(node.id) || !node.revisions?.length) continue;
       const active = node.activeRevision ?? 0;
       // 当前版永远放在链尾，箭头终点始终是它（切回旧版后仍然是「指向当前」）。
       const chain = node.revisions
@@ -357,7 +375,7 @@ export function TreeCanvas({
       }
     }
     return links;
-  }, [conversation.nodes, expandedVersions, layout]);
+  }, [conversation.nodes, versionOwners, layout]);
 
   /** 画布上的任何卡片都走这里选中：伪节点记住原提问 + 版本下标。 */
   const selectLayoutNode = (id: string) => {
@@ -434,6 +452,9 @@ export function TreeCanvas({
           </IconButton>
           <IconButton label="功能导航与快捷键" className="h-8 w-8 border border-line bg-canvas" onClick={() => setHelpOpen(true)}>
             <Question size={14} />
+          </IconButton>
+          <IconButton label="开发面板（恢复示例数据）" className="h-8 w-8 border border-line bg-canvas" onClick={onOpenDev}>
+            <Bug size={14} />
           </IconButton>
           <button
             type="button"
@@ -608,7 +629,7 @@ export function TreeCanvas({
               const seenJunctions = new Set<string>();
               return layout.edges.map((edge) => {
                 const active = pathIds.has(edge.from) && pathIds.has(edge.to);
-                const isHidden = hiddenIds.has(edge.to);
+                const isHidden = hiddenIds.has(edge.to) || archivedSet.has(edge.to);
                 const isRevision = edge.kind === "revision";
                 const jKey = edge.junction ? `${edge.junction.x},${edge.junction.y}` : null;
                 const showJunction = !!jKey && !seenJunctions.has(jKey);
@@ -666,6 +687,8 @@ export function TreeCanvas({
               const faded =
                 hiddenIds.has(from.id) ||
                 hiddenIds.has(to.id) ||
+                archivedSet.has(from.id) ||
+                archivedSet.has(to.id) ||
                 (focusPath && (!pathIds.has(from.id) || !pathIds.has(to.id)));
               const r = (n: number) => Math.round(n * 10) / 10;
               // 整体横向：后继走左/右，版本链就走上/下的竖线；整体纵向则反过来。
@@ -694,6 +717,7 @@ export function TreeCanvas({
             const node = nodeMap.get(pos.id);
             if (!node) return null;
             const hidden = hiddenIds.has(node.id);
+            const archived = archivedSet.has(node.id);
             const dimmed = focusPath && !pathIds.has(node.id);
             const matched = matchIds.has(node.id);
             if (node.revisionRef) {
@@ -709,6 +733,7 @@ export function TreeCanvas({
                   dimmed={dimmed}
                   matched={matched}
                   hidden={hidden}
+                  archived={archived}
                   direction={direction}
                   onSelect={() => onSelect(ref.ownerId, ref)}
                   onRestore={() => onRestoreRevision(ref.ownerId, ref.index)}
@@ -725,7 +750,8 @@ export function TreeCanvas({
                 dimmed={dimmed}
                 matched={matched}
                 hidden={hidden}
-                versionPorts={expandedVersions.has(node.id)}
+                archived={archived}
+                versionPorts={versionOwners.has(node.id)}
                 direction={direction}
                 onSelect={() => onSelect(node.id, null)}
                 onToggleCollapse={() => nodeActions.collapse(node.id)}
@@ -774,7 +800,7 @@ export function TreeCanvas({
                   width={n.w}
                   height={n.h}
                   rx={8}
-                  opacity={hiddenIds.has(n.id) ? 0.35 : 1}
+                  opacity={hiddenIds.has(n.id) ? 0.35 : archivedSet.has(n.id) ? 0.5 : 1}
                   className={cn(
                     isRevision
                       ? "fill-acc-yellow-fg"
@@ -809,6 +835,7 @@ export function TreeCanvas({
           onRevise={nodeActions.revise}
           onToggleVersions={nodeActions.toggleVersions}
           versionsExpanded={expandedVersions.has(menu.id)}
+          onFollow={nodeActions.follow}
           onHide={nodeActions.hide}
           onCollapse={nodeActions.collapse}
           onCopy={nodeActions.copy}

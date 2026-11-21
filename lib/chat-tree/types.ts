@@ -45,8 +45,20 @@ export interface ChatNode {
   revisionRef?: RevisionRef;
   /** null 表示这是一次会话的开场提问（根）。 */
   parentId: string | null;
-  /** 这次追问是在父提问的哪一版回答之后发生的；缺省视为父节点的当前版。 */
+  /** 最初是在父提问的哪一版之后追问的 —— 永久锚点，跟随失败 / 放弃跟随后回到这一版。 */
   parentRevision?: number;
+  /**
+   * 用户显式批准跟随到父提问的哪一版。
+   * 只有它等于父节点当前版时才生效；当前版换了一版就自动失效，需要重新批准。
+   * 默认没有值 = 不跟随，后继留在 parentRevision 那一版（灰显）。
+   */
+  followRevision?: number | null;
+  /**
+   * 派生显示状态（不写回存档）：
+   * archived = 挂在历史版本下的分支（含后代），整棵置灰；
+   * following = 已批准跟随当前版的子树根。
+   */
+  versionState?: "archived" | "following";
   /** 用户在这一节点上的提问全文。 */
   prompt: string;
   /** 当前展示的回答（等价于 revisions[activeRevision]?.answer）。 */

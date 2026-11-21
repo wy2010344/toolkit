@@ -50,6 +50,7 @@ export function NodeCard({
   dimmed,
   matched,
   hidden,
+  archived,
   versionPorts,
   direction,
   onSelect,
@@ -64,6 +65,8 @@ export function NodeCard({
   matched: boolean;
   /** 自身或祖先被标记隐藏 —— 整棵子树一起灰显。 */
   hidden: boolean;
+  /** 挂在历史版本下的分支 —— 与历史版本一起置灰。 */
+  archived: boolean;
   /** 展开版本链时，当前版本节点也要补上上/下（或左/右）端子。 */
   versionPorts: boolean;
   direction: TreeDirection;
@@ -82,7 +85,7 @@ export function NodeCard({
   return (
     <div
       data-tree-node="1"
-      className={cn("group absolute", hidden && "opacity-35", dimmed && "opacity-25")}
+      className={cn("group absolute", dimmed ? "opacity-25" : hidden ? "opacity-35" : archived ? "opacity-45 saturate-50" : "")}
       style={{ left: pos.x, top: pos.y, width: pos.w, height: pos.h }}
     >
       <div
@@ -160,6 +163,7 @@ export function RevisionCard({
   dimmed,
   matched,
   hidden,
+  archived,
   direction,
   onSelect,
   onRestore,
@@ -171,6 +175,7 @@ export function RevisionCard({
   dimmed: boolean;
   matched: boolean;
   hidden: boolean;
+  archived: boolean;
   direction: TreeDirection;
   onSelect: () => void;
   onRestore: () => void;
@@ -180,7 +185,7 @@ export function RevisionCard({
     <div
       data-tree-node="1"
       data-revision-node="1"
-      className={cn("group absolute", hidden && "opacity-35", dimmed && "opacity-25")}
+      className={cn("group absolute", dimmed ? "opacity-25" : hidden ? "opacity-35" : archived ? "opacity-45 saturate-50" : "")}
       style={{ left: pos.x, top: pos.y, width: pos.w, height: pos.h }}
     >
       <div

@@ -1,37 +1,22 @@
 "use client";
 
-import { useEffect, useRef } from "react";
 import {
+  ArrowRight,
   CaretRight,
   Copy,
   Eye,
   EyeSlash,
+  LinkBreak,
   ListBullets,
   PaperPlaneTilt,
   PencilSimple,
   Trash,
 } from "@phosphor-icons/react/dist/ssr";
 import { cn } from "@/components/ui";
+import { ContextMenu, type ContextItem, type MenuTarget } from "./ContextMenu";
 import type { ChatNode } from "@/lib/chat-tree/types";
 
-/** 右键菜单的定位信息：屏幕坐标 + 目标节点 + 打开时的画布可视区（用于夹住菜单）。 */
-export interface MenuTarget {
-  id: string;
-  x: number;
-  y: number;
-  bounds: { left: number; top: number; right: number; bottom: number };
-}
-
-interface Item {
-  key: string;
-  label: string;
-  hint?: string;
-  icon: React.ReactNode;
-  onClick: () => void;
-  danger?: boolean;
-  disabled?: boolean;
-  divider?: boolean;
-}
+export type { MenuTarget } from "./ContextMenu";
 
 export function NodeMenu({
   target,
@@ -41,6 +26,7 @@ export function NodeMenu({
   onRevise,
   onToggleVersions,
   versionsExpanded,
+  onFollow,
   onHide,
   onCollapse,
   onCopy,
@@ -53,61 +39,86 @@ export function NodeMenu({
   onRevise: (id: string) => void;
   onToggleVersions: (id: string) => void;
   versionsExpanded: boolean;
+  onFollow: (id: string, follow: boolean) => void;
   onHide: (id: string) => void;
   onCollapse: (id: string) => void;
   onCopy: (id: string) => void;
   onRemove: (id: string) => void;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const id = target.id;
-
-  useEffect(() => {
-    const onDown = (e: PointerEvent) => {
-      if (ref.current?.contains(e.target as Node)) return;
-      onClose();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    // capture 阶段监听，先于节点的点击逻辑关掉菜单。
-    document.addEventListener("pointerdown", onDown, true);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", onDown, true);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [onClose]);
-
   if (!node) return null;
-
+  const id = target.id;
   const versionCount = node.revisions?.length ?? 0;
+  const origin = (node.parentRevision ?? 0) + 1;
 
-  const items: Item[] = [
-    { key: "followUp", label: "追问", hint: "在此节点下追加", icon: <PaperPlaneTilt size={14} />, onClick: () => onFollowUp(id) },
-    { key: "revise", label: "修改这一问", hint: "填入原问题供改写", icon: <PencilSimple size={14} />, onClick: () => onRevise(id) },
+  const items: ContextItem[] = [
+    {
+      key: "followUp",
+      label: "追问",
+      icon: <PaperPlaneTilt size={14} />,
+      title: "在这一问下追加子节点",
+      onClick: () => onFollowUp(id),
+    },
+    {
+      key: "revise",
+      label: "修改这一问",
+      icon: <PencilSimple size={14} />,
+      title: "填入原问题供改写，发送后产出新版本",
+      onClick: () => onRevise(id),
+    },
     {
       key: "versions",
-      label: versionsExpanded ? "收起版本伪分支" : versionCount > 1 ? `展开版本 · ${versionCount} 版` : "展开版本",
-      hint: versionCount > 1 ? "平级版本链 · 可逐版查看" : "当前仅 1 版",
+      label: versionsExpanded ? "收起版本链" : versionCount > 1 ? "展开版本链" : "展开版本",
       icon: <ListBullets size={14} />,
+      title: "旧版与当前提问平级，箭头指向当前版",
+      badge: versionCount > 1 ? `${versionCount} 版` : undefined,
       onClick: () => onToggleVersions(id),
       divider: true,
     },
+  ];
+
+  // 版本归属是显式的：历史版本下的子树默认留在原版，只有批准才归档到当前版。
+  if (node.parentId && node.versionState === "archived") {
+    items.push({
+      key: "follow",
+      label: "跟随到当前版",
+      icon: <ArrowRight size={14} />,
+      title: "批准整棵子树移到当前版本下；当前版再换版时需要重新批准",
+      onClick: () => onFollow(id, true),
+      divider: true,
+    });
+  } else if (node.versionState === "following") {
+    items.push({
+      key: "unfollow",
+      label: `放弃跟随 · 回到 v${origin}`,
+      icon: <LinkBreak size={14} />,
+      title: "撤销批准，子树回到最初追问时的那一版",
+      onClick: () => onFollow(id, false),
+      divider: true,
+    });
+  }
+
+  items.push(
     {
       key: "hide",
       label: node.hidden ? "取消隐藏" : "标记隐藏",
-      hint: node.hidden ? undefined : "整棵子树变灰",
       icon: node.hidden ? <Eye size={14} /> : <EyeSlash size={14} />,
+      title: "作用于整棵子树：先灰显，需要时再进一步过滤",
       onClick: () => onHide(id),
+      divider: items.length > 0,
     },
     {
       key: "collapse",
       label: node.collapsed ? "展开子树" : "折叠子树",
       icon: <CaretRight size={14} className={cn(node.collapsed && "rotate-90")} />,
       onClick: () => onCollapse(id),
+    },
+    {
+      key: "copy",
+      label: "复制回答",
+      icon: <Copy size={14} />,
+      onClick: () => onCopy(id),
       divider: true,
     },
-    { key: "copy", label: "复制回答", icon: <Copy size={14} />, onClick: () => onCopy(id) },
     {
       key: "remove",
       label: "删除分支",
@@ -116,50 +127,7 @@ export function NodeMenu({
       danger: true,
       disabled: !node.parentId,
     },
-  ];
-
-  // 先把菜单按内置尺寸夹进画布可视区。
-  const MENU_W = 208;
-  const MENU_H = items.length * 34 + 44;
-  const bounds = target.bounds;
-  let left = target.x;
-  let top = target.y;
-  left = Math.min(left, bounds.right - MENU_W - 8);
-  top = Math.min(top, bounds.bottom - MENU_H - 8);
-  left = Math.max(left, bounds.left + 8);
-  top = Math.max(top, bounds.top + 8);
-
-  return (
-    <div
-      ref={ref}
-      className="fixed z-50 w-52 overflow-hidden rounded-xl border border-line bg-surface py-1.5 shadow-[0_18px_48px_-16px_rgba(0,0,0,0.5)]"
-      style={{ left, top }}
-      onContextMenu={(e) => e.preventDefault()}
-    >
-      <div className="truncate border-b border-line px-3 pb-1.5 pt-0.5 text-[10px] text-faint" title={node.prompt}>
-        {node.prompt}
-      </div>
-      {items.map((it) => (
-        <div key={it.key}>
-          {it.divider && <div className="my-1 h-px bg-line" />}
-          <button
-            type="button"
-            disabled={it.disabled}
-            onClick={() => {
-              it.onClick();
-              onClose();
-            }}
-            className={cn(
-              "flex w-full items-center gap-2.5 px-3 py-[7px] text-left text-[12px] transition-colors disabled:opacity-35",
-              it.danger ? "text-acc-red-fg hover:bg-acc-red-bg" : "text-ink hover:bg-surface-mute",
-            )}
-          >
-            <span className={cn("shrink-0", it.danger ? "text-acc-red-fg" : "text-muted")}>{it.icon}</span>
-            <span className="min-w-0 flex-1 truncate">{it.label}</span>
-            {it.hint && <span className="shrink-0 text-[9.5px] text-faint">{it.hint}</span>}
-          </button>
-        </div>
-      ))}
-    </div>
   );
+
+  return <ContextMenu target={target} items={items} onClose={onClose} header={node.prompt} />;
 }

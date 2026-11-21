@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  ArrowClockwise,
-  ChatsCircle,
+  Copy,
+  FolderOpen,
   MagnifyingGlass,
   PencilSimple,
   Plus,
@@ -13,6 +13,7 @@ import {
   X,
 } from "@phosphor-icons/react/dist/ssr";
 import { cn } from "@/components/ui";
+import { ContextMenu, type MenuTarget } from "./ContextMenu";
 import { treeStats } from "@/lib/chat-tree/tree";
 import type { Conversation } from "@/lib/chat-tree/types";
 
@@ -27,7 +28,6 @@ export function ConversationList({
   onNew,
   onRename,
   onDelete,
-  onReset,
   onClose,
 }: {
   conversations: Conversation[];
@@ -38,14 +38,13 @@ export function ConversationList({
   onNew: () => void;
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
-  onReset: () => void;
   onClose?: () => void;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
-  const [confirmReset, setConfirmReset] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [ctx, setCtx] = useState<MenuTarget | null>(null);
   const editRef = useRef<HTMLInputElement>(null);
+  const asideRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     if (editingId) editRef.current?.focus();
@@ -65,7 +64,7 @@ export function ConversationList({
   };
 
   return (
-    <aside className="flex h-full w-full flex-col border-r border-line bg-surface lg:w-[248px] lg:shrink-0">
+    <aside ref={asideRef} className="flex h-full w-full flex-col border-r border-line bg-surface lg:w-[248px] lg:shrink-0">
       <header className="border-b border-line px-3 py-3">
         <div className="flex items-center gap-2">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-ink text-white">
@@ -116,7 +115,15 @@ export function ConversationList({
         </div>
       </header>
 
-      <nav className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+      <nav
+        className="min-h-0 flex-1 overflow-y-auto px-2 py-2"
+        onContextMenu={(e) => {
+          if ((e.target as HTMLElement).closest("[data-conversation]")) return;
+          e.preventDefault();
+          const r = asideRef.current?.getBoundingClientRect();
+          setCtx({ id: "__nav__", x: e.clientX, y: e.clientY, bounds: r ? { left: r.left, top: r.top, right: r.right, bottom: r.bottom } : { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight } });
+        }}
+      >
         {filtered.length === 0 && <p className="px-2 py-6 text-center text-[11.5px] text-faint">没有匹配的会话</p>}
         {GROUPS.map((group) => {
           const items = filtered.filter((c) => c.group === group);
@@ -130,7 +137,7 @@ export function ConversationList({
                 const last = c.nodes[c.nodes.length - 1]?.prompt ?? "空会话";
                 const editing = editingId === c.id;
                 const shell = cn(
-                  "flex w-full flex-col gap-1 rounded-lg px-2.5 py-2 pr-14 text-left transition-colors",
+                  "flex w-full flex-col gap-1 rounded-lg px-2.5 py-2 text-left transition-colors",
                   active ? "bg-ink text-white" : "text-ink-soft hover:bg-surface-mute",
                 );
                 const meta = (
@@ -150,7 +157,17 @@ export function ConversationList({
                   </>
                 );
                 return (
-                  <div key={c.id} className="group relative">
+                  <div
+                    key={c.id}
+                    data-conversation={c.id}
+                    className="group relative"
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const r = asideRef.current?.getBoundingClientRect();
+                      setCtx({ id: c.id, x: e.clientX, y: e.clientY, bounds: r ? { left: r.left, top: r.top, right: r.right, bottom: r.bottom } : { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight } });
+                    }}
+                  >
                     {editing ? (
                       <div className={shell}>
                         <input
@@ -180,39 +197,6 @@ export function ConversationList({
                         {meta}
                       </button>
                     )}
-                    {!editing && (
-                      <div className="absolute right-1.5 top-2 hidden items-center gap-0.5 group-hover:flex">
-                        <button
-                          type="button"
-                          aria-label="重命名会话"
-                          title="重命名"
-                          onClick={() => {
-                            setDraft(c.title);
-                            setEditingId(c.id);
-                          }}
-                          className="flex h-5 w-5 items-center justify-center rounded text-faint hover:bg-surface-mute hover:text-ink"
-                        >
-                          <PencilSimple size={12} />
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={confirmDelete === c.id ? "再点一次确认删除" : "删除会话"}
-                          title={confirmDelete === c.id ? "再点一次确认删除" : "删除会话"}
-                          onClick={() => {
-                            if (confirmDelete === c.id) {
-                              onDelete(c.id);
-                              setConfirmDelete(null);
-                            } else setConfirmDelete(c.id);
-                          }}
-                          className={cn(
-                            "flex h-5 w-5 items-center justify-center rounded hover:bg-surface-mute",
-                            confirmDelete === c.id ? "text-acc-red-fg" : "text-faint hover:text-ink",
-                          )}
-                        >
-                          <Trash size={12} />
-                        </button>
-                      </div>
-                    )}
                   </div>
                 );
               })}
@@ -221,33 +205,61 @@ export function ConversationList({
         })}
       </nav>
 
-      <footer className="shrink-0 border-t border-line p-3">
-        <div className="mb-2.5 rounded-md border border-line bg-canvas px-2.5 py-2 text-[10.5px] leading-[1.7] text-muted">
-          <span className="mb-1 flex items-center gap-1.5 font-medium text-ink">
-            <ChatsCircle size={12} />
-            怎么用
-          </span>
-          点节点 → 右侧看回答；在右侧继续追问 → 长出新分支；追问链可单独导出。
-        </div>
-        <button
-          type="button"
-          onClick={() => {
-            if (confirmReset) {
-              onReset();
-              setConfirmReset(false);
-            } else setConfirmReset(true);
-          }}
-          onBlur={() => setConfirmReset(false)}
-          className={cn(
-            "flex w-full items-center justify-center gap-1.5 rounded-md py-1.5 text-[11px] transition-colors",
-            confirmReset ? "bg-acc-red-bg text-acc-red-fg" : "text-faint hover:bg-surface-mute hover:text-ink",
-          )}
-        >
-          <ArrowClockwise size={12} />
-          {confirmReset ? "再点一次恢复示例数据" : "恢复示例数据"}
-        </button>
-        <p className="mt-1.5 text-center text-[9.5px] leading-relaxed text-faint">改动保存在浏览器 localStorage · 纯前端演示，不接模型 API</p>
-      </footer>
+      {ctx && (
+        <ContextMenu
+          target={ctx}
+          onClose={() => setCtx(null)}
+          header={ctx.id === "__nav__" ? undefined : conversations.find((c) => c.id === ctx.id)?.title}
+          items={ctx.id === "__nav__"
+            ? [{ key: "new", label: "新建会话", icon: <Plus size={14} />, onClick: onNew }]
+            : [
+                {
+                  key: "open",
+                  label: "打开会话",
+                  icon: <FolderOpen size={14} />,
+                  onClick: () => onSelect(ctx.id),
+                },
+                {
+                  key: "rename",
+                  label: "重命名",
+                  icon: <PencilSimple size={14} />,
+                  onClick: () => {
+                    const c = conversations.find((x) => x.id === ctx.id);
+                    if (c) {
+                      setDraft(c.title);
+                      setEditingId(c.id);
+                    }
+                  },
+                },
+                {
+                  key: "copyTitle",
+                  label: "复制标题",
+                  icon: <Copy size={14} />,
+                  onClick: () => {
+                    const c = conversations.find((x) => x.id === ctx.id);
+                    if (c && navigator.clipboard?.writeText) void navigator.clipboard.writeText(c.title);
+                  },
+                },
+                {
+                  key: "delete",
+                  label: "删除会话",
+                  icon: <Trash size={14} />,
+                  onClick: () => onDelete(ctx.id),
+                  danger: true,
+                  disabled: conversations.length <= 1,
+                  title: conversations.length <= 1 ? "至少保留一个会话" : undefined,
+                  divider: true,
+                },
+                {
+                  key: "new",
+                  label: "新建会话",
+                  icon: <Plus size={14} />,
+                  onClick: onNew,
+                  divider: true,
+                },
+              ]}
+        />
+      )}
     </aside>
   );
 }

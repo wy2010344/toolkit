@@ -5,6 +5,8 @@ import { CaretUp, List, X } from "@phosphor-icons/react/dist/ssr";
 import { cn } from "@/components/ui";
 import { AnswerPanel } from "./AnswerPanel";
 import { ConversationList } from "./ConversationList";
+import { DevPanel } from "./DevPanel";
+import { FirstRunTour, tourSeen } from "./FirstRunTour";
 import { TreeCanvas, type FocusRequest, type NodeActions, type ViewCommand } from "./TreeCanvas";
 import { layoutTree } from "@/lib/chat-tree/layout";
 import { makeDemoAnswer, makeRevisionAnswer } from "@/lib/chat-tree/generate";
@@ -88,6 +90,9 @@ export function ChatTreeApp() {
   const [prefill, setPrefill] = useState<{ text: string; token: number } | null>(null);
   const [generating, setGenerating] = useState(false);
   const [modelError, setModelError] = useState<string | null>(null);
+  /** 首次进入的一次性演示与开发面板都只在需要时挂载，不常驻主界面。 */
+  const [showTour, setShowTour] = useState(false);
+  const [showDev, setShowDev] = useState(false);
   const tokenRef = useRef(0);
   /** 同步锁：连点两次发送时，第二次要在 state 更新前就被挡住。 */
   const generatingRef = useRef(false);
@@ -116,6 +121,7 @@ export function ChatTreeApp() {
       } catch {
         /* 存档损坏就退回示例数据 */
       }
+      setShowTour(!tourSeen());
       setLoaded(true);
     });
     return () => {
@@ -410,6 +416,22 @@ export function ChatTreeApp() {
     requestFocus(ownerId);
   };
 
+  /**
+   * 批准 / 撤销「跟随到当前版」。批准值绑定父提问当时的 activeRevision：
+   * 当前版一换就自动过期，子树退回 parentRevision 那一版，不会悄悄归档。
+   */
+  const setFollow = (id: string, follow: boolean) => {
+    const node = nodes.find((n) => n.id === id);
+    if (!node?.parentId) return;
+    const parent = nodes.find((n) => n.id === node.parentId);
+    if (!parent) return;
+    const active = parent.activeRevision ?? 0;
+    updateNodes(activeConv.id, (list) =>
+      list.map((n) => (n.id === id ? { ...n, followRevision: follow ? active : null } : n)),
+    );
+    requestFocus(id);
+  };
+
   const toggleHidden = (id: string) => {
     const target = nodes.find((n) => n.id === id);
     if (!target) return;
@@ -479,6 +501,7 @@ export function ChatTreeApp() {
     collapse: (id) => toggleCollapse(id),
     copy: (id) => copyAnswer(id),
     remove: (id) => deleteBranch(id),
+    follow: setFollow,
   };
 
   const newConversation = () => {
@@ -530,6 +553,15 @@ export function ChatTreeApp() {
     setComposerMode("continue");
     setPrefill({ text: "", token: ++tokenRef.current });
     requestFocus(SAMPLE_CONVERSATIONS[0]!.nodes[0]!.id);
+  };
+
+  const clearStorage = () => {
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      /* 忽略隐私模式下的写入失败 */
+    }
+    window.location.reload();
   };
 
   const exportPath = () => {
@@ -669,7 +701,6 @@ export function ChatTreeApp() {
             }}
             onRename={renameConversation}
             onDelete={deleteConversation}
-            onReset={resetDemo}
             onClose={() => setMobileListOpen(false)}
           />
         </div>
@@ -705,6 +736,7 @@ export function ChatTreeApp() {
           onExportPath={exportPath}
           onRestoreRevision={restoreRevision}
           nodeActions={nodeActions}
+          onOpenDev={() => setShowDev(true)}
         />
 
         {/* 右：宽屏常驻 / 窄屏底部抽屉（点节点自动升起） */}
@@ -766,6 +798,15 @@ export function ChatTreeApp() {
         </button>
       )}
 
+      {showTour && <FirstRunTour onClose={() => setShowTour(false)} />}
+      {showDev && (
+        <DevPanel
+          onClose={() => setShowDev(false)}
+          onReset={resetDemo}
+          onClear={clearStorage}
+          storageKey={STORAGE_KEY}
+        />
+      )}
     </div>
   );
 }

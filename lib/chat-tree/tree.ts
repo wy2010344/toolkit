@@ -191,54 +191,122 @@ export function isRevisionNode(node: ChatNode): boolean {
 }
 
 /**
+ * 这个子节点此刻真正挂在父提问的哪一版下面。
+ *
+ * `parentRevision` 是永久锚点（最初是在哪一版之后追问的）；`followRevision`
+ * 是用户显式批准的跟随目标，且只对「父节点当前版」有效。当前版一换，批准就过期，
+ * 自动退回锚点 —— 所以永远不会悄悄把旧版的子树归档到新版下。
+ */
+export function attachedRevisionOf(node: ChatNode, parent: ChatNode): number {
+  const active = parent.activeRevision ?? 0;
+  const origin = node.parentRevision ?? active;
+  return node.followRevision != null && node.followRevision === active ? active : origin;
+}
+
+/**
  * 构造画布专用的显示节点。关键语义：
  * - 版本不是提问的子节点，而是与提问**同层**的兄弟；当前版本仍由原节点表示，
  *   其余版本派生为带 `revisionRef` 的伪节点，父节点沿用原节点的父节点。
- * - 子节点通过 `parentRevision` 认领父提问的某一版：展开后挂到那一版（含自己的整棵后继树），
- *   不跟随、也不继承其他版本；未标注的旧数据默认挂在父节点的当前版。
+ * - 每个后继节点按 `attachedRevisionOf` 挂到它真正归属的那一版。历史版本即使没有
+ *   「展开版本」，只要有后继挂在上面，也照样派生出伪节点来承接 —— 不会掉回当前版。
+ * - 历史版本卡片、以及挂在历史版本上的整棵子树都标 `versionState: "archived"`，
+ *   在画布上一起置灰；已批准跟随当前版的子树根标 `"following"`。
  * - 派生结果只进画布布局，不写回会话数据。
  */
 export function buildDisplayNodes(nodes: ChatNode[], expandedIds: Set<string>): ChatNode[] {
   const owners = new Map(nodes.map((n) => [n.id, n]));
+  const activeOf = (id: string) => owners.get(id)?.activeRevision ?? 0;
+
+  // 1. 先算出每个节点实际归属的版本，以及哪些版本必须派生出伪节点来承接子树。
+  const attached = new Map<string, number>();
+  const needed = new Map<string, Set<number>>();
+  const needRevision = (ownerId: string, index: number) => {
+    const set = needed.get(ownerId) ?? new Set<number>();
+    set.add(index);
+    needed.set(ownerId, set);
+  };
+  for (const node of nodes) {
+    if (!node.parentId) continue;
+    const parent = owners.get(node.parentId);
+    if (!parent) continue;
+    const index = attachedRevisionOf(node, parent);
+    attached.set(node.id, index);
+    if (index !== (parent.activeRevision ?? 0)) needRevision(parent.id, index);
+  }
+  for (const id of expandedIds) {
+    const owner = owners.get(id);
+    owner?.revisions?.forEach((_, i) => {
+      if (i !== (owner.activeRevision ?? 0)) needRevision(id, i);
+    });
+  }
+
+  // 2. 铺节点：每个提问前插它需要展示的历史版本兄弟，保证版本链在兄弟槽里相邻。
   const pseudo = new Map<string, ChatNode>();
   const out: ChatNode[] = [];
-
-  // 先按原顺序铺节点：每个提问前插它的历史版本兄弟，保证版本链在兄弟槽里相邻。
   for (const node of nodes) {
-    if (expandedIds.has(node.id)) {
-      node.revisions?.forEach((rev, index) => {
-        if (index === (node.activeRevision ?? 0)) return;
-        const id = revisionNodeId(node.id, index);
-        const versionNode: ChatNode = {
-          id,
-          parentId: node.parentId,
-          // 版本卡片展示这一版自己的问题，让人一眼看出「改了哪一问」。
-          prompt: rev.prompt,
-          answer: rev.answer,
-          model: rev.model,
-          time: rev.time,
-          date: rev.date,
-          synthetic: rev.synthetic,
-          pending: rev.pending,
-          hidden: node.hidden,
-          collapsed: node.collapsed,
-          revisionRef: { ownerId: node.id, index },
-        };
-        pseudo.set(`${node.id}:${index}`, versionNode);
-        out.push(versionNode);
-      });
+    const indices = [...(needed.get(node.id) ?? [])].sort((a, b) => a - b);
+    for (const index of indices) {
+      const rev = node.revisions?.[index];
+      if (!rev) continue;
+      const id = revisionNodeId(node.id, index);
+      const versionNode: ChatNode = {
+        id,
+        parentId: node.parentId,
+        // 版本卡片展示这一版自己的问题，让人一眼看出「改了哪一问」。
+        prompt: rev.prompt,
+        answer: rev.answer,
+        model: rev.model,
+        time: rev.time,
+        date: rev.date,
+        synthetic: rev.synthetic,
+        pending: rev.pending,
+        hidden: node.hidden,
+        collapsed: node.collapsed,
+        revisionRef: { ownerId: node.id, index },
+        // 历史版本本身就按「历史态」显示，和挂在它下面的子树一致。
+        versionState: "archived",
+      };
+      pseudo.set(`${node.id}:${index}`, versionNode);
+      out.push(versionNode);
     }
     out.push(node);
   }
 
-  // 再把每个子节点改挂到它真正跟随的版本上；当前版仍用原节点承接。
-  return out.map((node) => {
-    if (!node.parentId || node.revisionRef || node.parentRevision == null) return node;
-    const parent = owners.get(node.parentId);
-    if (!parent || node.parentRevision === (parent.activeRevision ?? 0)) return node;
-    const target = pseudo.get(`${parent.id}:${node.parentRevision}`);
-    return target ? { ...node, parentId: target.id } : node;
+  // 3. 改挂到归属版本；挂不上去时宁可保持原位，也绝不静默归档到当前版。
+  const reparented = out.map((node) => {
+    if (node.revisionRef || !node.parentId) return node;
+    const index = attached.get(node.id);
+    if (index == null) return node;
+    if (index === activeOf(node.parentId)) {
+      return node.followRevision === activeOf(node.parentId)
+        ? { ...node, versionState: "following" as const }
+        : node;
+    }
+    const target = pseudo.get(`${node.parentId}:${index}`);
+    // 目标版本不存在也不退回当前版：至少保持灰显，让用户能右键批准跟随。
+    return target ? { ...node, parentId: target.id, versionState: "archived" as const } : { ...node, versionState: "archived" as const };
   });
+
+  // 4. archived 沿真实父子链继承：灰色子树里不该冒出一个亮着的后代。
+  const map = new Map(reparented.map((n) => [n.id, n]));
+  const children = new Map<string, ChatNode[]>();
+  for (const node of reparented) {
+    if (!node.parentId) continue;
+    const list = children.get(node.parentId) ?? [];
+    list.push(node);
+    children.set(node.parentId, list);
+  }
+  const walk = (node: ChatNode) => {
+    for (const child of children.get(node.id) ?? []) {
+      if (node.versionState === "archived" && child.versionState !== "archived") {
+        const next = { ...child, versionState: "archived" as const };
+        map.set(child.id, next);
+        walk(next);
+      } else walk(child);
+    }
+  };
+  for (const root of reparented.filter((n) => !n.parentId)) walk(map.get(root.id) ?? root);
+  return reparented.map((n) => map.get(n.id) ?? n);
 }
 
 /** 隐藏分支及其整棵子树的 id —— 父分支隐藏时后代一并从画布剔除。 */
