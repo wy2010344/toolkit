@@ -4,35 +4,7 @@ import { type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouse
 import { CaretDown, CaretRight } from "@phosphor-icons/react/dist/ssr";
 import { cn } from "@/components/ui";
 import type { PositionedNode } from "@/lib/chat-tree/layout";
-import type { ChatNode, TreeDirection } from "@/lib/chat-tree/types";
-
-/** UML 端口圆点：伪分支和真实分支共用同一套「接线」语言。 */
-function Ports({ direction, selected, revision }: { direction: TreeDirection; selected: boolean; revision?: boolean }) {
-  const cls = cn(
-    "pointer-events-none absolute h-2 w-2 rounded-full border bg-surface",
-    revision ? "border-acc-yellow-fg/70" : selected ? "border-ink" : "border-line-strong",
-  );
-  return (
-    <>
-      <span className={cn(cls, direction === "LR" ? "-left-[5px] top-1/2 -translate-y-1/2" : "-top-[5px] left-1/2 -translate-x-1/2")} />
-      <span className={cn(cls, direction === "LR" ? "-right-[5px] top-1/2 -translate-y-1/2" : "-bottom-[5px] left-1/2 -translate-x-1/2")} />
-    </>
-  );
-}
-
-/**
- * 版本链专用的另外两个端口。整体横向时后继走左/右，版本链就走上/下；
- * 整体纵向时反过来 —— 两组线永不共用端子，也就不会互相压住。
- */
-function VersionPorts({ direction }: { direction: TreeDirection }) {
-  const cls = "pointer-events-none absolute h-[7px] w-[7px] rounded-full border border-acc-yellow-fg/70 bg-surface";
-  return (
-    <>
-      <span className={cn(cls, direction === "LR" ? "-top-[4px] left-1/2 -translate-x-1/2" : "-left-[4px] top-1/2 -translate-y-1/2")} />
-      <span className={cn(cls, direction === "LR" ? "-bottom-[4px] left-1/2 -translate-x-1/2" : "-right-[4px] top-1/2 -translate-y-1/2")} />
-    </>
-  );
-}
+import type { ChatNode } from "@/lib/chat-tree/types";
 
 function activateOnKey(e: ReactKeyboardEvent<HTMLDivElement>, fn: () => void) {
   if (e.key === "Enter" || e.key === " ") {
@@ -51,8 +23,6 @@ export function NodeCard({
   matched,
   hidden,
   archived,
-  versionPorts,
-  direction,
   onSelect,
   onToggleCollapse,
   onContextMenu,
@@ -67,9 +37,6 @@ export function NodeCard({
   hidden: boolean;
   /** 挂在历史版本下的分支 —— 与历史版本一起置灰。 */
   archived: boolean;
-  /** 展开版本链时，当前版本节点也要补上上/下（或左/右）端子。 */
-  versionPorts: boolean;
-  direction: TreeDirection;
   onSelect: () => void;
   onToggleCollapse: () => void;
   onContextMenu: (e: ReactMouseEvent) => void;
@@ -145,8 +112,6 @@ export function NodeCard({
         </button>
       ) : null}
 
-      <Ports direction={direction} selected={selected} />
-      {versionPorts && <VersionPorts direction={direction} />}
     </div>
   );
 }
@@ -164,7 +129,6 @@ export function RevisionCard({
   matched,
   hidden,
   archived,
-  direction,
   onSelect,
   onRestore,
 }: {
@@ -176,7 +140,6 @@ export function RevisionCard({
   matched: boolean;
   hidden: boolean;
   archived: boolean;
-  direction: TreeDirection;
   onSelect: () => void;
   onRestore: () => void;
 }) {
@@ -234,9 +197,6 @@ export function RevisionCard({
           </span>
         </span>
       </div>
-
-      <Ports direction={direction} selected={selected} revision />
-      <VersionPorts direction={direction} />
     </div>
   );
 }

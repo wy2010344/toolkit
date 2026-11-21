@@ -695,6 +695,7 @@ export function ChatTreeApp() {
               selectConversation(id);
               setMobileListOpen(false);
             }}
+            onContextSelect={(id) => selectConversation(id)}
             onNew={() => {
               newConversation();
               setMobileListOpen(false);

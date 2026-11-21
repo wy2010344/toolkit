@@ -625,42 +625,37 @@ export function TreeCanvas({
             viewBox={`0 0 ${layout.width} ${layout.height}`}
             className="pointer-events-none absolute inset-0 overflow-visible"
           >
-            {(() => {
-              const seenJunctions = new Set<string>();
-              return layout.edges.map((edge) => {
-                const active = pathIds.has(edge.from) && pathIds.has(edge.to);
-                const isHidden = hiddenIds.has(edge.to) || archivedSet.has(edge.to);
-                const isRevision = edge.kind === "revision";
-                const jKey = edge.junction ? `${edge.junction.x},${edge.junction.y}` : null;
-                const showJunction = !!jKey && !seenJunctions.has(jKey);
-                if (jKey) seenJunctions.add(jKey);
-                return (
-                  <g
-                    key={edge.id}
-                    className={cn(focusPath && !active && !isRevision && "opacity-20", isHidden && "opacity-40")}
-                  >
-                    <path
-                      d={edge.d}
-                      fill="none"
-                      strokeDasharray={isHidden ? "6 5" : isRevision ? "3 5" : undefined}
-                      strokeWidth={active ? 2.2 * (1 / Math.max(view.k, 0.6)) : isRevision ? 1.4 : 1.8}
-                      strokeLinejoin="round"
-                      strokeLinecap="round"
-                      className={active ? "stroke-ink" : isRevision ? "stroke-acc-yellow-fg" : "stroke-faint"}
-                    />
-                    {showJunction && (
-                      <circle
-                        cx={edge.junction!.x}
-                        cy={edge.junction!.y}
-                        r={3.6}
-                        className={cn("fill-surface", active ? "stroke-ink" : "stroke-line-strong")}
-                        strokeWidth={1.4}
-                      />
-                    )}
-                  </g>
-                );
-              });
-            })()}
+            <defs>
+              {/* 只保留方向箭头：卡片不需要出入端子，分叉处也不再画汇合圆点。 */}
+              <marker id="chat-tree-edge-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+                <path d="M 0 0 L 10 5 L 0 10 z" className="fill-faint" />
+              </marker>
+              <marker id="chat-tree-edge-arrow-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+                <path d="M 0 0 L 10 5 L 0 10 z" className="fill-ink" />
+              </marker>
+            </defs>
+            {layout.edges.map((edge) => {
+              const active = pathIds.has(edge.from) && pathIds.has(edge.to);
+              const isMuted = hiddenIds.has(edge.to) || archivedSet.has(edge.to);
+              const isRevision = edge.kind === "revision";
+              return (
+                <path
+                  key={edge.id}
+                  d={edge.d}
+                  fill="none"
+                  strokeDasharray={isMuted ? "6 5" : isRevision ? "3 5" : undefined}
+                  strokeWidth={active ? 2.2 * (1 / Math.max(view.k, 0.6)) : isRevision ? 1.4 : 1.8}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                  markerEnd={`url(#${active ? "chat-tree-edge-arrow-active" : "chat-tree-edge-arrow"})`}
+                  className={cn(
+                    active ? "stroke-ink" : isRevision ? "stroke-acc-yellow-fg" : "stroke-faint",
+                    focusPath && !active && !isRevision && "opacity-20",
+                    isMuted && "opacity-40",
+                  )}
+                />
+              );
+            })}
           </svg>
 
           {/* 版本链：旧版 → 下一版 → 当前版。箭头是平级节点之间的横向引用，不是父子连线。 */}
@@ -734,7 +729,6 @@ export function TreeCanvas({
                   matched={matched}
                   hidden={hidden}
                   archived={archived}
-                  direction={direction}
                   onSelect={() => onSelect(ref.ownerId, ref)}
                   onRestore={() => onRestoreRevision(ref.ownerId, ref.index)}
                 />
@@ -751,8 +745,6 @@ export function TreeCanvas({
                 matched={matched}
                 hidden={hidden}
                 archived={archived}
-                versionPorts={versionOwners.has(node.id)}
-                direction={direction}
                 onSelect={() => onSelect(node.id, null)}
                 onToggleCollapse={() => nodeActions.collapse(node.id)}
                 onContextMenu={(e) => {

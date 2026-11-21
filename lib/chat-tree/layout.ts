@@ -33,8 +33,6 @@ export interface LayoutEdge {
   d: string;
   /** 版本伪分支用虚线和暖色区分。 */
   kind: "question" | "revision";
-  /** 分叉点的汇合圆点。 */
-  junction: { x: number; y: number } | null;
 }
 
 export interface TreeLayout {
@@ -133,22 +131,13 @@ export function layoutTree(nodes: ChatNode[], direction: TreeDirection): TreeLay
     const kids = (children.get(parent.id) ?? []).map((k) => byId.get(k.id)).filter((n): n is PositionedNode => !!n);
     if (!kids.length) continue;
 
-    // 汇合点只属于真实追问分支；版本伪节点不参与。
-    const realKids = kids.filter((k) => k.kind !== "revision");
-    const junction =
-      realKids.length > 1
-        ? direction === "LR"
-          ? { x: parent.x + parent.w + Math.min(46, GAP_X / 2), y: parent.y + parent.h / 2 }
-          : { x: parent.x + parent.w / 2, y: parent.y + parent.h + Math.min(38, GAP_Y / 2) }
-        : null;
-
     kids.forEach((child) => {
       let d: string;
       if (direction === "LR") {
         const outX = parent.x + parent.w;
         const outY = parent.y + parent.h / 2;
         const cy = child.y + child.h / 2;
-        const trunkX = junction?.x ?? child.x;
+        const trunkX = child.x;
         const pts = Math.abs(cy - outY) < 0.5
           ? [{ x: outX, y: outY }, { x: child.x, y: cy }]
           : [{ x: outX, y: outY }, { x: trunkX, y: outY }, { x: trunkX, y: cy }, { x: child.x, y: cy }];
@@ -157,7 +146,7 @@ export function layoutTree(nodes: ChatNode[], direction: TreeDirection): TreeLay
         const outX = parent.x + parent.w / 2;
         const outY = parent.y + parent.h;
         const cx = child.x + child.w / 2;
-        const trunkY = junction?.y ?? child.y;
+        const trunkY = child.y;
         const pts = Math.abs(cx - outX) < 0.5
           ? [{ x: outX, y: outY }, { x: cx, y: child.y }]
           : [{ x: outX, y: outY }, { x: outX, y: trunkY }, { x: cx, y: trunkY }, { x: cx, y: child.y }];
@@ -168,7 +157,6 @@ export function layoutTree(nodes: ChatNode[], direction: TreeDirection): TreeLay
         from: parent.id,
         to: child.id,
         d,
-        junction,
         kind: child.kind === "revision" ? "revision" : "question",
       });
     });
