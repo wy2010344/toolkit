@@ -50,7 +50,7 @@ DFT 听音室的目标是让人听懂、看懂变换在做什么,不是快。教
 
 ## 对话树:HTML 卡片 + SVG 连线,而不是整张 SVG
 
-节点要做成带标题栏、正文、元信息栏的「类框」,还要能选中、悬停折叠、长文本截断 —— 用 HTML/CSS 比拼 SVG `<foreignObject>` 省事得多。于是画布是一个 `transform: translate() scale()` 的 HTML 层:边在同一层里用 SVG path 画,节点用绝对定位的卡片叠在上面。缩放只需改一个 transform,文字、边框、阴影一起跟着变;平移/缩放的落点换算全部集中在一个 `{x, y, k}` 状态里。代价是滚轮必须用非 passive 的原生监听器(React 的 `onWheel` 没法 `preventDefault`),以及小地图要用 `getScreenCTM().inverse()` 把点击位置反算回世界坐标。卡片最初照 UML 画了四个出入端子、分叉处再画汇合圆点,结果在窄屏上全是零散的小圆圈,反而盖过了问题和连线本身。现在端子与汇合圆点全部删掉,方向改由连线末端的 SVG marker 箭头表达:`layout.ts` 不再产 `junction`,每条边的折点各自以子节点所在槽位为 trunk,`TreeCanvas` 用两组 marker 区分普通/高亮边。少画两类圆圈,视觉上只剩卡片与带箭头的线。
+节点要做成带标题栏、正文、元信息栏的「类框」,还要能选中、悬停折叠、长文本截断 —— 用 HTML/CSS 比拼 SVG `<foreignObject>` 省事得多。于是画布是一个 `transform: translate() scale()` 的 HTML 层:边在同一层里用 SVG path 画,节点用绝对定位的卡片叠在上面。缩放只需改一个 transform,文字、边框、阴影一起跟着变;平移/缩放的落点换算全部集中在一个 `{x, y, k}` 状态里。代价是滚轮必须用非 passive 的原生监听器(React 的 `onWheel` 没法 `preventDefault`),以及小地图要用 `getScreenCTM().inverse()` 把点击位置反算回世界坐标。卡片最初照 UML 画了四个出入端子、分叉处再画汇合圆点,结果在窄屏上全是零散的小圆圈,反而盖过了问题和连线本身。现在端子与汇合圆点全部删掉,方向改由连线末端的 SVG marker 箭头表达:`layout.ts` 不再产 `junction`,但保留转折槽位:多子分叉共用一个靠近父节点的 trunk(就是以前圆点所在处),单子边取间距中点,拐点仍落在连线中段而不是子节点边缘才折;`TreeCanvas` 用两组 marker 区分普通/高亮边。少画两类圆圈,视觉上只剩卡片与带箭头的线。
 
 ## 对话树:追问与修改是两个维度
 

@@ -25,7 +25,6 @@ export function ConversationList({
   query,
   onQueryChange,
   onSelect,
-  onContextSelect,
   onNew,
   onRename,
   onDelete,
@@ -36,8 +35,6 @@ export function ConversationList({
   query: string;
   onQueryChange: (q: string) => void;
   onSelect: (id: string) => void;
-  /** 右键时先选中目标会话（不关抽屉），让菜单作用在高亮项上。 */
-  onContextSelect?: (id: string) => void;
   onNew: () => void;
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
@@ -142,6 +139,8 @@ export function ConversationList({
                 const shell = cn(
                   "flex w-full flex-col gap-1 rounded-lg px-2.5 py-2 text-left transition-colors",
                   active ? "bg-ink text-white" : "text-ink-soft hover:bg-surface-mute",
+                  // 右键目标只加一层阴影提示菜单作用对象，不切换当前会话。
+                  ctx?.id === c.id && "shadow-[0_2px_10px_rgba(0,0,0,0.14)] ring-1 ring-line-strong",
                 );
                 const meta = (
                   <>
@@ -167,7 +166,6 @@ export function ConversationList({
                     onContextMenu={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      (onContextSelect ?? onSelect)(c.id);
                       const r = asideRef.current?.getBoundingClientRect();
                       setCtx({ id: c.id, x: e.clientX, y: e.clientY, bounds: r ? { left: r.left, top: r.top, right: r.right, bottom: r.bottom } : { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight } });
                     }}
