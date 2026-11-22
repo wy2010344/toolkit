@@ -41,13 +41,15 @@ export function NodeCard({
   onToggleCollapse: () => void;
   onContextMenu: (e: ReactMouseEvent) => void;
 }) {
-  const stripe = selected
-    ? "bg-ink"
-    : matched
-      ? "bg-acc-yellow-fg"
-      : onPath
-        ? "bg-acc-blue-fg"
-        : "bg-line-strong";
+  const strip = hidden
+    ? "ct-strip-line"
+    : selected
+      ? "ct-strip-ink"
+      : matched
+        ? "ct-strip-yellow"
+        : onPath
+          ? "ct-strip-blue"
+          : "ct-strip-line";
 
   return (
     <div
@@ -63,19 +65,14 @@ export function NodeCard({
         onContextMenu={onContextMenu}
         title="点击查看回答 · 右键更多操作"
         className={cn(
-          "relative flex h-full w-full cursor-pointer flex-col overflow-hidden rounded-[11px] border bg-surface text-left outline-none transition-[border-color,box-shadow,transform] duration-150 focus-visible:ring-2 focus-visible:ring-ink/30",
-          hidden
-            ? "border-line shadow-none hover:border-line-strong"
-            : selected
-              ? "border-ink shadow-[0_10px_26px_-12px_rgba(0,0,0,0.55)] ring-2 ring-ink/20"
-              : matched
-                ? "border-acc-yellow-fg shadow-sm hover:-translate-y-0.5"
-                : onPath
-                  ? "border-acc-blue-fg/70 shadow-sm hover:-translate-y-0.5"
-                  : "border-line shadow-sm hover:-translate-y-0.5 hover:border-line-strong",
+          "ct-card relative flex h-full w-full cursor-pointer flex-col overflow-hidden rounded-[14px] text-left outline-none focus-visible:ring-2 focus-visible:ring-ink/25",
+          hidden && "ct-card-muted",
+          !hidden && selected && "ct-card-selected",
+          !hidden && !selected && matched && "ct-card-matched",
+          !hidden && !selected && !matched && onPath && "ct-card-path",
         )}
       >
-        <span className={cn("absolute left-0 top-0 h-full w-[3px]", stripe)} />
+        <span className={cn("ct-strip", strip)} />
 
         {/* 提问区 */}
         <span className="flex min-h-0 flex-1 items-start px-3 py-2.5">
@@ -83,7 +80,7 @@ export function NodeCard({
         </span>
 
         {/* 元信息栏：模型 · 时间 */}
-        <span className="flex h-[25px] shrink-0 items-center gap-1.5 border-t border-line bg-canvas/60 px-2.5 text-[10px] text-faint">
+        <span className="ct-card-foot flex h-[25px] shrink-0 items-center gap-1.5 px-2.5 text-[10px] text-faint">
           <span className="truncate font-mono">{node.model}</span>
           {node.pending ? (
             <span className="ml-auto flex shrink-0 items-center gap-1 font-mono">
@@ -106,7 +103,7 @@ export function NodeCard({
             e.stopPropagation();
             onToggleCollapse();
           }}
-          className="absolute -right-2 -top-2 hidden h-5 w-5 items-center justify-center rounded-full border border-line-strong bg-surface text-muted shadow-sm hover:border-ink hover:text-ink group-hover:flex"
+          className="ct-soft-btn absolute -right-2 -top-2 hidden h-5 w-5 items-center justify-center rounded-full group-hover:flex"
         >
           {node.collapsed ? <CaretRight size={11} weight="bold" /> : <CaretDown size={11} weight="bold" />}
         </button>
@@ -117,7 +114,7 @@ export function NodeCard({
 }
 
 /**
- * 回答版本的「伪节点」：与提问卡片**同层**，用虚线框和暖色与真实分支区分。
+ * 回答版本的「伪节点」：与提问卡片**同层**，用暖色渐染的色块和虚线连线与真实分支区分。
  * 它不是一次新提问，所以没有 Q 序号；箭头指向下一版，终点是当前版。
  */
 export function RevisionCard({
@@ -158,15 +155,11 @@ export function RevisionCard({
         onKeyDown={(e) => activateOnKey(e, onSelect)}
         title="点击预览这一版的问题与回答 · 与当前版本平级，箭头指向下一版"
         className={cn(
-          "relative flex h-full w-full cursor-pointer flex-col overflow-hidden rounded-[11px] border border-dashed bg-acc-yellow-bg/20 text-left outline-none transition-[border-color,box-shadow,transform] duration-150 focus-visible:ring-2 focus-visible:ring-acc-yellow-fg/30",
-          selected
-            ? "border-acc-yellow-fg shadow-[0_10px_24px_-14px_rgba(149,100,0,0.6)] ring-2 ring-acc-yellow-fg/20"
-            : matched
-              ? "border-acc-yellow-fg"
-              : "border-acc-yellow-fg/50 hover:-translate-y-0.5 hover:border-acc-yellow-fg",
+          "ct-card ct-card-revision relative flex h-full w-full cursor-pointer flex-col overflow-hidden rounded-[14px] text-left outline-none focus-visible:ring-2 focus-visible:ring-acc-yellow-fg/30",
+          (selected || matched) && "ct-card-selected",
         )}
       >
-        <span className="absolute left-0 top-0 h-full w-[3px] bg-acc-yellow-fg" />
+        <span className="ct-strip ct-strip-yellow" />
 
         {/* 提问区 */}
         <span className="flex min-h-0 flex-1 items-start px-3 py-2.5">
@@ -174,7 +167,7 @@ export function RevisionCard({
         </span>
 
         {/* 元信息栏：vN · 模型 · 时间 + 切回入口 */}
-        <span className="flex h-[25px] shrink-0 items-center gap-1.5 border-t border-dashed border-acc-yellow-fg/40 bg-canvas/50 px-2.5 font-mono text-[10px] text-faint">
+        <span className="ct-card-foot ct-card-foot-warm flex h-[25px] shrink-0 items-center gap-1.5 px-2.5 font-mono text-[10px] text-faint">
           <span className={cn("shrink-0 rounded-[3px] px-1 font-semibold", isCurrent ? "bg-acc-yellow-bg text-acc-yellow-fg" : "bg-acc-yellow-fg text-white")}>
             v{index + 1}
           </span>

@@ -64,8 +64,8 @@ export function ConversationList({
   };
 
   return (
-    <aside ref={asideRef} className="flex h-full w-full flex-col border-r border-line bg-surface lg:w-[248px] lg:shrink-0">
-      <header className="border-b border-line px-3 py-3">
+    <aside ref={asideRef} className="ct-panel-left ct-surface flex h-full w-full flex-col lg:w-[248px] lg:shrink-0">
+      <header className="ct-panel-top relative px-3 py-3">
         <div className="flex items-center gap-2">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-ink text-white">
             <TreeStructure size={17} weight="fill" />
@@ -86,7 +86,7 @@ export function ConversationList({
           )}
           <Link
             href="/"
-            className="ml-auto shrink-0 rounded border border-line px-1.5 py-0.5 font-mono text-[9.5px] text-faint transition-colors hover:border-line-strong hover:text-ink"
+            className="ct-soft-btn ml-auto shrink-0 rounded px-1.5 py-0.5 font-mono text-[9.5px]"
           >
             工具箱
           </Link>
@@ -94,12 +94,12 @@ export function ConversationList({
         <button
           type="button"
           onClick={onNew}
-          className="mt-3 flex h-8 w-full items-center justify-center gap-1.5 rounded-md border border-line-strong bg-canvas text-[12px] font-medium text-ink transition-colors hover:bg-surface-mute"
+          className="ct-soft-btn mt-3 flex h-8 w-full items-center justify-center gap-1.5 rounded-md text-[12px] font-medium"
         >
           <Plus size={13} weight="bold" />
           新建会话
         </button>
-        <div className="mt-2 flex h-8 items-center gap-2 rounded-md border border-line bg-canvas px-2.5 focus-within:border-line-strong">
+        <div className="ct-inset mt-2 flex h-8 items-center gap-2 rounded-md px-2.5">
           <MagnifyingGlass size={13} className="shrink-0 text-faint" />
           <input
             value={query}
@@ -140,7 +140,7 @@ export function ConversationList({
                   "flex w-full flex-col gap-1 rounded-lg px-2.5 py-2 text-left transition-colors",
                   active ? "bg-ink text-white" : "text-ink-soft hover:bg-surface-mute",
                   // 右键目标只加一层阴影提示菜单作用对象，不切换当前会话。
-                  ctx?.id === c.id && "shadow-[0_2px_10px_rgba(0,0,0,0.14)] ring-1 ring-line-strong",
+                  ctx?.id === c.id && "shadow-[0_6px_18px_-8px_rgba(33,31,27,0.45)]",
                 );
                 const meta = (
                   <>
@@ -181,7 +181,7 @@ export function ConversationList({
                             if (e.key === "Enter") commitRename();
                             if (e.key === "Escape") setEditingId(null);
                           }}
-                          className="h-6 w-full rounded border border-line-strong bg-surface px-1.5 text-[12.5px] text-ink outline-none"
+                          className="ct-inset h-6 w-full rounded px-1.5 text-[12.5px] text-ink outline-none"
                         />
                         {meta}
                       </div>

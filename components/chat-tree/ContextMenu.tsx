@@ -66,18 +66,18 @@ export function ContextMenu({
     <div
       ref={ref}
       role="menu"
-      className="fixed z-50 overflow-hidden rounded-xl border border-line bg-surface py-1.5 shadow-[0_18px_48px_-16px_rgba(0,0,0,0.5)]"
+      className="ct-menu fixed z-50 overflow-hidden rounded-xl py-1.5"
       style={{ left, top, width }}
       onContextMenu={(e) => e.preventDefault()}
     >
       {header && (
-        <div className="truncate border-b border-line px-3 pb-1.5 pt-0.5 text-[10px] text-faint" title={header}>
+        <div className="truncate px-3 pb-1 pt-0.5 text-[10px] text-faint" title={header}>
           {header}
         </div>
       )}
       {items.map((item) => (
         <div key={item.key}>
-          {item.divider && <div className="my-1 h-px bg-line" />}
+          {item.divider && <div className="h-2" />}
           <button
             type="button"
             role="menuitem"

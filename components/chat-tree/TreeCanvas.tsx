@@ -413,9 +413,9 @@ export function TreeCanvas({
   };
 
   return (
-    <section className="flex min-w-0 flex-1 flex-col overflow-hidden border-x border-line bg-canvas">
+    <section className="ct-ambient flex min-w-0 flex-1 flex-col overflow-hidden">
       {/* 工具条 */}
-      <header className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-line bg-surface px-3 py-2">
+      <header className="ct-surface ct-panel-top relative flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1.5 px-3 py-2">
         <div className="min-w-0 flex-1 pr-2 lg:min-w-[252px]">
           <h2 className="truncate text-[13px] font-semibold text-ink">{conversation.title}</h2>
           <p className="mt-0.5 hidden items-center gap-1.5 whitespace-nowrap font-mono text-[10px] text-faint lg:flex">
@@ -431,36 +431,36 @@ export function TreeCanvas({
 
         {/* 缩放控件常驻；窄屏把搜索 / 方向 / 聚焦 / 导出收进「更多」。 */}
         <div className="ml-auto flex items-center gap-1.5">
-          <div className="flex h-8 items-center rounded-md border border-line bg-canvas">
-            <IconButton label="缩小" className="h-7 w-7 rounded-none" onClick={() => zoomBy(1 / 1.2)}>
+          <div className="ct-soft-btn flex h-8 items-center rounded-lg">
+            <IconButton label="缩小" className="h-7 w-7 rounded-md" onClick={() => zoomBy(1 / 1.2)}>
               <Minus size={13} weight="bold" />
             </IconButton>
             <button
               type="button"
               onClick={fit}
               title="适配视图"
-              className="h-7 min-w-[46px] border-x border-line px-1 font-mono text-[10.5px] text-muted hover:text-ink"
+              className="h-7 min-w-[46px] px-1 font-mono text-[10.5px] hover:text-ink"
             >
               {Math.round(view.k * 100)}%
             </button>
-            <IconButton label="放大" className="h-7 w-7 rounded-none" onClick={() => zoomBy(1.2)}>
+            <IconButton label="放大" className="h-7 w-7 rounded-md" onClick={() => zoomBy(1.2)}>
               <Plus size={13} weight="bold" />
             </IconButton>
           </div>
-          <IconButton label="适配全部节点" className="h-8 w-8 border border-line bg-canvas" onClick={fit}>
+          <IconButton label="适配全部节点" className="ct-soft-btn h-8 w-8 rounded-lg" onClick={fit}>
             <FrameCorners size={14} />
           </IconButton>
-          <IconButton label="功能导航与快捷键" className="h-8 w-8 border border-line bg-canvas" onClick={() => setHelpOpen(true)}>
+          <IconButton label="功能导航与快捷键" className="ct-soft-btn h-8 w-8 rounded-lg" onClick={() => setHelpOpen(true)}>
             <Question size={14} />
           </IconButton>
-          <IconButton label="开发面板（恢复示例数据）" className="h-8 w-8 border border-line bg-canvas" onClick={onOpenDev}>
+          <IconButton label="开发面板（恢复示例数据）" className="ct-soft-btn h-8 w-8 rounded-lg" onClick={onOpenDev}>
             <Bug size={14} />
           </IconButton>
           <button
             type="button"
             onClick={() => setShowMore((v) => !v)}
             aria-expanded={showMore}
-            className="flex h-8 items-center gap-1 rounded-md border border-line bg-canvas px-2 text-[11px] text-muted lg:hidden"
+            className="ct-soft-btn flex h-8 items-center gap-1 rounded-lg px-2 text-[11px] lg:hidden"
           >
             <DotsThree size={14} weight="bold" />
             更多
@@ -468,7 +468,7 @@ export function TreeCanvas({
         </div>
 
         <div className={cn("w-full flex-wrap items-center gap-1.5 lg:w-auto lg:flex", showMore ? "flex" : "hidden")}>
-          <div className="relative flex h-8 w-[186px] items-center rounded-md border border-line bg-canvas focus-within:border-line-strong">
+          <div className="ct-inset relative flex h-8 w-[186px] items-center rounded-lg">
             <MagnifyingGlass size={13} className="ml-2.5 shrink-0 text-faint" />
             <input
               value={searchQuery}
@@ -497,15 +497,15 @@ export function TreeCanvas({
               type="button"
               onClick={locateNext}
               title="定位下一个匹配"
-              className="h-8 rounded-md border border-line bg-surface px-2 text-[11px] text-muted hover:border-line-strong hover:text-ink"
+              className="ct-soft-btn h-8 rounded-lg px-2 text-[11px]"
             >
               下一个
             </button>
           )}
 
-          <span className="mx-0.5 hidden h-5 w-px bg-line lg:block" />
+          <span className="hidden w-2 lg:block" />
 
-          <div className="flex h-8 items-center rounded-md border border-line bg-canvas p-0.5">
+          <div className="ct-soft-btn flex h-8 items-center rounded-lg p-0.5">
             <button
               type="button"
               title="横向：从左到右"
@@ -535,8 +535,8 @@ export function TreeCanvas({
             onClick={() => onFocusPathChange(!focusPath)}
             title="只高亮当前追问链"
             className={cn(
-              "flex h-8 items-center gap-1.5 rounded-md border px-2 text-[11px] transition-colors",
-              focusPath ? "border-ink bg-ink text-white" : "border-line bg-canvas text-muted hover:border-line-strong hover:text-ink",
+              "ct-soft-btn flex h-8 items-center gap-1.5 rounded-lg px-2 text-[11px]",
+              focusPath && "ct-soft-btn-active",
             )}
           >
             {focusPath ? <Eye size={13} /> : <EyeSlash size={13} />}
@@ -554,8 +554,8 @@ export function TreeCanvas({
                   : `从画布过滤 ${hiddenCount} 条隐藏分支`
             }
             className={cn(
-              "flex h-8 items-center gap-1.5 rounded-md border px-2 text-[11px] transition-colors disabled:opacity-40",
-              filterHidden ? "border-ink bg-ink text-white" : "border-line bg-canvas text-muted hover:border-line-strong hover:text-ink",
+              "ct-soft-btn flex h-8 items-center gap-1.5 rounded-lg px-2 text-[11px] disabled:opacity-40",
+              filterHidden && "ct-soft-btn-active",
             )}
           >
             <Funnel size={13} />
@@ -567,11 +567,11 @@ export function TreeCanvas({
             onClick={onExportPath}
             disabled={conversation.nodes.length === 0}
             title="把当前追问链导出为 Markdown"
-            className="flex h-8 items-center gap-1 rounded-md border border-line bg-canvas px-2 text-[11px] text-muted hover:border-line-strong hover:text-ink disabled:opacity-40"
+            className="ct-soft-btn flex h-8 items-center gap-1 rounded-lg px-2 text-[11px] disabled:opacity-40"
           >
             <DownloadSimple size={13} /> 导出链
           </button>
-          <IconButton label="导出当前会话 JSON" className="h-8 w-8 border border-line bg-canvas" onClick={onExportJson} disabled={conversation.nodes.length === 0}>
+          <IconButton label="导出当前会话 JSON" className="ct-soft-btn h-8 w-8 rounded-lg" onClick={onExportJson} disabled={conversation.nodes.length === 0}>
             <DownloadSimple size={14} />
           </IconButton>
         </div>
@@ -594,15 +594,16 @@ export function TreeCanvas({
         <div
           className="pointer-events-none absolute inset-0"
           style={{
-            backgroundImage: "radial-gradient(circle, var(--color-line) 1px, transparent 1px)",
+            backgroundImage: "radial-gradient(circle, rgba(33,31,27,0.1) 1px, transparent 1px)",
             backgroundSize: `${24 * view.k}px ${24 * view.k}px`,
             backgroundPosition: `${view.x}px ${view.y}px`,
+            maskImage: "radial-gradient(ellipse 78% 78% at 50% 50%, #000 35%, transparent 100%)",
           }}
         />
 
         {displayNodes.length === 0 && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6">
-            <div className="max-w-[280px] rounded-xl border border-dashed border-line-strong bg-surface/85 px-5 py-4 text-center shadow-sm">
+            <div className="ct-empty max-w-[280px] rounded-2xl px-5 py-4 text-center">
               <div className="text-[13px] font-medium text-ink">还没有提问</div>
               <p className="mt-1.5 text-[11px] leading-relaxed text-muted">
                 在右侧写下第一个问题，它就会成为这棵树的根节点。
@@ -767,9 +768,9 @@ export function TreeCanvas({
         {/* 小地图：窄屏让位给画布，靠「适配」按钮看全图 */}
         <div
           data-canvas-control="1"
-          className="absolute bottom-3 right-3 hidden overflow-hidden rounded-md border border-line bg-surface/90 shadow-sm backdrop-blur-sm lg:block"
+          className="ct-menu absolute bottom-3 right-3 hidden overflow-hidden rounded-lg lg:block"
         >
-          <div className="flex items-center justify-between border-b border-line px-2 py-1 font-mono text-[9px] uppercase tracking-wider text-faint">
+          <div className="flex items-center justify-between px-2 pb-0.5 pt-1 font-mono text-[9px] uppercase tracking-wider text-faint">
             <span>minimap</span>
             <span>{Math.round(view.k * 100)}%</span>
           </div>

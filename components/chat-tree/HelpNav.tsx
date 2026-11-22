@@ -65,7 +65,7 @@ export function HelpNav({ onClose }: { onClose: () => void }) {
         role="dialog"
         aria-label="功能导航"
         onClick={(e) => e.stopPropagation()}
-        className="max-h-[86vh] w-full max-w-[620px] overflow-y-auto rounded-2xl border border-line bg-surface p-5 shadow-[0_24px_70px_-20px_rgba(0,0,0,0.55)]"
+        className="ct-dialog max-h-[86vh] w-full max-w-[620px] overflow-y-auto rounded-2xl p-5"
       >
         <div className="mb-4 flex items-center justify-between">
           <div>
@@ -83,7 +83,7 @@ export function HelpNav({ onClose }: { onClose: () => void }) {
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           {GROUPS.map((g) => (
-            <section key={g.title} className="rounded-xl border border-line bg-canvas/50 p-3">
+            <section key={g.title} className="ct-tile rounded-xl p-3">
               <h3 className="mb-2 font-mono text-[10px] uppercase tracking-wider text-faint">{g.title}</h3>
               <dl className="space-y-1.5">
                 {g.rows.map(([k, v]) => (

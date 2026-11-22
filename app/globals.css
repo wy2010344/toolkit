@@ -47,6 +47,175 @@ body {
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
+/* ------------------------------------------------------------------ */
+/* 对话树 · 柔和空间感：用色块、光晕和渐隐接缝代替 1px 边框            */
+/* ------------------------------------------------------------------ */
+:root {
+  --ct-shadow-panel-left: 16px 0 38px -32px rgba(33, 31, 27, 0.6);
+  --ct-shadow-panel-right: -16px 0 38px -32px rgba(33, 31, 27, 0.6);
+  --ct-shadow-card: 0 2px 8px -4px rgba(33, 31, 27, 0.1), 0 18px 34px -26px rgba(33, 31, 27, 0.5);
+  --ct-shadow-card-hover: 0 8px 18px -8px rgba(33, 31, 27, 0.16), 0 24px 44px -28px rgba(33, 31, 27, 0.5);
+  --ct-shadow-menu: 0 24px 64px -26px rgba(33, 31, 27, 0.45), 0 4px 12px -8px rgba(33, 31, 27, 0.16);
+  --ct-shadow-dialog: 0 32px 90px -28px rgba(33, 31, 27, 0.5), 0 6px 18px -10px rgba(33, 31, 27, 0.14);
+}
+
+/* 画布底：三团极淡的环境光，替代硬直的分栏色块 */
+.ct-ambient {
+  background-color: var(--color-canvas);
+  background-image:
+    radial-gradient(780px 480px at 6% -8%, rgba(225, 243, 254, 0.62), transparent 62%),
+    radial-gradient(820px 520px at 104% 6%, rgba(251, 243, 219, 0.52), transparent 60%),
+    radial-gradient(760px 520px at 46% 118%, rgba(237, 243, 236, 0.45), transparent 64%);
+}
+
+.ct-surface {
+  background: linear-gradient(165deg, #fff 0%, #fbfaf7 100%);
+}
+
+/* 三栏接缝：投影 + 一条由深到透明的渐隐带，不画实线 */
+.ct-panel-left,
+.ct-panel-right {
+  position: relative;
+  z-index: 5;
+}
+.ct-panel-left {
+  box-shadow: var(--ct-shadow-panel-left);
+}
+.ct-panel-right {
+  box-shadow: var(--ct-shadow-panel-right);
+}
+.ct-panel-left::after,
+.ct-panel-right::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 18px;
+  pointer-events: none;
+}
+.ct-panel-left::after {
+  right: 0;
+  background: linear-gradient(90deg, transparent, rgba(33, 31, 27, 0.05));
+}
+.ct-panel-right::before {
+  left: 0;
+  background: linear-gradient(90deg, rgba(33, 31, 27, 0.05), transparent);
+}
+.ct-panel-top {
+  box-shadow: 0 12px 26px -28px rgba(33, 31, 27, 0.7);
+}
+
+/* 节点卡片：白到暖白的微渐变 + 两层软投影；选中用光晕而不是描边 */
+.ct-card {
+  background: linear-gradient(155deg, #ffffff 0%, #faf9f5 100%);
+  box-shadow: var(--ct-shadow-card);
+  transition:
+    transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 0.18s ease,
+    background 0.18s ease;
+}
+.ct-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--ct-shadow-card-hover);
+}
+.ct-card-selected {
+  background: linear-gradient(155deg, #ffffff 0%, #f2f7fb 100%);
+  box-shadow: 0 0 0 5px rgba(31, 108, 159, 0.09), var(--ct-shadow-card-hover);
+}
+.ct-card-path {
+  background: linear-gradient(155deg, #ffffff 0%, #f6fafc 100%);
+}
+.ct-card-matched {
+  box-shadow: 0 0 0 5px rgba(149, 100, 0, 0.11), var(--ct-shadow-card-hover);
+}
+.ct-card-muted {
+  background: linear-gradient(155deg, #faf9f6 0%, #f3f1ec 100%);
+  box-shadow: none;
+}
+.ct-card-revision {
+  background: linear-gradient(155deg, rgba(251, 243, 219, 0.94) 0%, rgba(255, 253, 247, 0.97) 100%);
+  box-shadow: 0 2px 8px -4px rgba(149, 100, 0, 0.16), 0 18px 34px -26px rgba(149, 100, 0, 0.45);
+}
+.ct-card-revision.ct-card-selected,
+.ct-card-revision.ct-card-matched {
+  box-shadow: 0 0 0 5px rgba(149, 100, 0, 0.12), 0 10px 24px -14px rgba(149, 100, 0, 0.45);
+}
+/* 强调色从左边缘渐隐进卡片，不再是一条 3px 实线 */
+.ct-strip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 20px;
+  pointer-events: none;
+}
+.ct-strip-ink {
+  background: linear-gradient(90deg, rgba(33, 31, 27, 0.75), transparent);
+}
+.ct-strip-blue {
+  background: linear-gradient(90deg, rgba(31, 108, 159, 0.65), transparent);
+}
+.ct-strip-yellow {
+  background: linear-gradient(90deg, rgba(149, 100, 0, 0.6), transparent);
+}
+.ct-strip-line {
+  background: linear-gradient(90deg, rgba(214, 210, 200, 0.42), transparent);
+}
+.ct-card-foot {
+  background: linear-gradient(180deg, transparent, rgba(33, 31, 27, 0.038));
+}
+.ct-card-foot-warm {
+  background: linear-gradient(180deg, transparent, rgba(149, 100, 0, 0.06));
+}
+
+/* 输入与控件：内凹色块代替边框，聚焦时一圈柔光 */
+.ct-inset {
+  background: rgba(239, 237, 232, 0.82);
+  box-shadow: inset 0 1px 3px rgba(33, 31, 27, 0.07);
+  transition: box-shadow 0.16s ease, background 0.16s ease;
+}
+.ct-inset:focus-within {
+  background: rgba(239, 237, 232, 0.95);
+  box-shadow: inset 0 1px 3px rgba(33, 31, 27, 0.07), 0 0 0 3px rgba(31, 108, 159, 0.1);
+}
+.ct-soft-btn {
+  background: rgba(239, 237, 232, 0.85);
+  color: var(--color-muted);
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+.ct-soft-btn:hover {
+  background: #e7e4dd;
+  color: var(--color-ink);
+}
+.ct-soft-btn-active,
+.ct-soft-btn-active:hover {
+  background: var(--color-ink);
+  color: #fff;
+  box-shadow: 0 6px 16px -10px rgba(33, 31, 27, 0.7);
+}
+
+/* 浮层：半透明磨砂 + 深投影，不再靠描边勾勒轮廓 */
+.ct-menu {
+  background: rgba(255, 255, 255, 0.93);
+  backdrop-filter: blur(20px) saturate(1.35);
+  box-shadow: var(--ct-shadow-menu);
+}
+.ct-dialog {
+  background: linear-gradient(160deg, #ffffff 0%, #faf9f5 100%);
+  box-shadow: var(--ct-shadow-dialog);
+}
+.ct-tile {
+  background: rgba(239, 237, 232, 0.58);
+}
+.ct-empty {
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.94), rgba(251, 243, 219, 0.55));
+  box-shadow: var(--ct-shadow-card);
+}
+.ct-fade-rule {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(33, 31, 27, 0.1), transparent);
+}
+
 /* indeterminate progress bar */
 @keyframes dirdiff-indeterminate {
   0% {

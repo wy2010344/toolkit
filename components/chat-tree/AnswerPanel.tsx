@@ -107,9 +107,9 @@ export function AnswerPanel({
   };
 
   return (
-    <aside className="flex h-full w-full flex-col overflow-hidden bg-surface lg:w-[340px] lg:shrink-0 lg:border-l lg:border-line xl:w-[392px]">
+    <aside className="ct-panel-right ct-surface flex h-full w-full flex-col overflow-hidden lg:w-[340px] lg:shrink-0 xl:w-[392px]">
       {modelError && (
-        <div className="flex items-start gap-2 border-b border-acc-red-fg/25 bg-acc-red-bg px-4 py-2 text-[10.5px] leading-[1.5] text-acc-red-fg">
+        <div className="flex items-start gap-2 bg-acc-red-bg px-4 py-2 text-[10.5px] leading-[1.5] text-acc-red-fg">
           <span className="min-w-0 flex-1">{modelError}</span>
           <button type="button" onClick={onDismissModelError} className="shrink-0 underline">
             关闭
@@ -160,7 +160,7 @@ export function AnswerPanel({
           <h1 className="mt-3 text-[15px] font-semibold leading-[1.6] text-ink">{current?.prompt ?? node.prompt}</h1>
 
           {previewVersion !== null && (
-            <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-acc-yellow-fg/50 bg-acc-yellow-bg/40 px-2.5 py-1.5 text-[10.5px] text-acc-yellow-fg">
+            <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg bg-acc-yellow-bg/70 px-2.5 py-1.5 text-[10.5px] text-acc-yellow-fg shadow-[0_10px_22px_-18px_rgba(149,100,0,0.45)]">
               <ArrowClockwise size={11} />
               正在看第 {previewVersion + 1}/{versionCount} 版（画布上的平级版本节点），当前版本未改动
               <button type="button" onClick={onExitPreview} className="ml-auto underline hover:text-ink">
@@ -197,7 +197,7 @@ export function AnswerPanel({
             </div>
           )}
 
-          <div className="mt-5 flex flex-wrap items-center gap-x-2.5 gap-y-1 border-t border-line pt-2.5 font-mono text-[9.5px] text-faint">
+          <div className="mt-4 flex flex-wrap items-center gap-x-2.5 gap-y-1 pt-1 font-mono text-[9.5px] text-faint">
             <span>{current?.model}</span>
             <span>·</span>
             <span>{current?.date} {current?.time}</span>
@@ -209,7 +209,7 @@ export function AnswerPanel({
       </div>
 
       {/* 唯一的创作入口：只有追问与修改两种模式 */}
-      <div className="shrink-0 border-t border-line bg-canvas/40 px-4 py-3">
+      <div className="shrink-0 bg-surface-mute/35 px-4 py-3 shadow-[0_-14px_28px_-30px_rgba(33,31,27,0.75)]">
         <div className="mb-2 flex items-center gap-1">
           {generating && (
             <span className="ml-auto flex items-center gap-1 text-[10px] text-acc-blue-fg">
@@ -231,8 +231,8 @@ export function AnswerPanel({
                 title={hint}
                 onClick={() => onComposerModeChange(m)}
                 className={cn(
-                  "flex items-center gap-1 rounded-lg px-2 py-1 text-[10.5px] transition-colors",
-                  composerMode === m ? "bg-ink text-white" : "text-muted hover:bg-surface-mute hover:text-ink",
+                  "ct-soft-btn flex items-center gap-1 rounded-lg px-2 py-1 text-[10.5px]",
+                  composerMode === m && "ct-soft-btn-active",
                 )}
               >
                 {m === "revise" && <PencilSimple size={11} />}
@@ -241,7 +241,7 @@ export function AnswerPanel({
             ))
           )}
         </div>
-        <div className="flex items-end gap-1.5 rounded-xl border border-line bg-surface p-1.5 focus-within:border-line-strong">
+        <div className="ct-inset flex items-end gap-1.5 rounded-xl p-1.5">
           <textarea
             ref={textareaRef}
             value={draft}

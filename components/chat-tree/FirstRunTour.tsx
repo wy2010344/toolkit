@@ -70,7 +70,7 @@ export function FirstRunTour({ onClose }: { onClose: () => void }) {
         role="dialog"
         aria-label="首次使用引导"
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-[440px] rounded-2xl border border-line bg-surface p-5 shadow-[0_24px_70px_-20px_rgba(0,0,0,0.55)]"
+        className="ct-dialog w-full max-w-[440px] rounded-2xl p-5"
       >
         <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-faint">
           <span className="flex h-6 w-6 items-center justify-center rounded-md bg-ink text-white">{current.icon}</span>

@@ -50,8 +50,8 @@ export function Markdown({ text }: { text: string }) {
       }
       i += 1;
       push(
-        <div className="my-3 overflow-hidden rounded-md border border-line bg-canvas">
-          {lang && <div className="border-b border-line px-3 py-1 font-mono text-[10px] uppercase tracking-wider text-faint">{lang}</div>}
+        <div className="ct-tile my-3 overflow-hidden rounded-lg">
+          {lang && <div className="px-3 pb-0.5 pt-1 font-mono text-[10px] uppercase tracking-wider text-faint">{lang}</div>}
           <pre className="overflow-x-auto px-3 py-2.5 font-mono text-[11.5px] leading-[1.7] text-ink-soft">
             <code>{body.join("\n")}</code>
           </pre>
@@ -79,7 +79,7 @@ export function Markdown({ text }: { text: string }) {
         i += 1;
       }
       push(
-        <blockquote className="my-3 rounded-r-md border-l-2 border-acc-blue-fg bg-acc-blue-bg/40 px-3 py-2 text-[12.5px] text-muted">
+        <blockquote className="my-3 rounded-r-lg bg-acc-blue-bg/55 px-3 py-2 text-[12.5px] text-muted shadow-[inset_3px_0_0_rgba(31,108,159,0.55)]">
           {body.map((b, n) => (
             <p key={n}>{renderInline(b, `q${key}-${n}`)}</p>
           ))}
@@ -113,7 +113,7 @@ export function Markdown({ text }: { text: string }) {
     }
 
     if (trimmed === "---") {
-      push(<hr className="my-4 border-line" />);
+      push(<div className="ct-fade-rule my-4" />);
       i += 1;
       continue;
     }

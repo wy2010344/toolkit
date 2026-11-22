@@ -639,14 +639,14 @@ export function ChatTreeApp() {
   }, [nodes, selectedNode, selectedId]);
 
   return (
-    <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-canvas text-ink">
+    <div className="ct-ambient relative flex h-dvh w-full flex-col overflow-hidden text-ink">
       {/* 窄屏顶栏：桌面三栏常驻，不需要这一条 */}
-      <header className="flex h-11 shrink-0 items-center gap-2 border-b border-line bg-surface px-3 lg:hidden">
+      <header className="ct-surface ct-panel-top relative flex h-11 shrink-0 items-center gap-2 px-3 lg:hidden">
         <button
           type="button"
           aria-label="打开会话列表"
           onClick={() => setMobileListOpen(true)}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-line bg-canvas text-ink"
+          className="ct-soft-btn flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink"
         >
           <List size={17} weight="bold" />
         </button>
@@ -742,11 +742,11 @@ export function ChatTreeApp() {
         {/* 右：宽屏常驻 / 窄屏底部抽屉（点节点自动升起） */}
         <div
           className={cn(
-            "fixed inset-x-0 bottom-0 z-40 flex h-[min(80dvh,680px)] flex-col overflow-hidden rounded-t-xl border-t border-line bg-surface shadow-[0_-16px_44px_-18px_rgba(0,0,0,0.45)] transition-transform duration-200 lg:static lg:z-auto lg:h-auto lg:w-auto lg:shrink-0 lg:rounded-none lg:border-t-0 lg:border-l lg:shadow-none lg:translate-y-0 lg:transition-none",
+            "ct-surface fixed inset-x-0 bottom-0 z-40 flex h-[min(80dvh,680px)] flex-col overflow-hidden rounded-t-2xl shadow-[0_-20px_56px_-28px_rgba(33,31,27,0.55)] transition-transform duration-200 lg:static lg:z-auto lg:h-auto lg:w-auto lg:shrink-0 lg:rounded-none lg:shadow-none lg:translate-y-0 lg:transition-none",
             mobileAnswerOpen ? "translate-y-0" : "translate-y-full",
           )}
         >
-          <div className="flex h-9 shrink-0 items-center justify-between border-b border-line px-3 lg:hidden">
+          <div className="flex h-9 shrink-0 items-center justify-between px-3 lg:hidden">
             <span className="text-[11px] text-muted">回答 · 点图中节点可切换</span>
             <button
               type="button"
@@ -786,7 +786,7 @@ export function ChatTreeApp() {
           type="button"
           data-mobile-answer="1"
           onClick={() => setMobileAnswerOpen(true)}
-          className="absolute bottom-3 left-3 right-3 z-20 flex items-center gap-2 rounded-lg border border-line bg-surface/95 px-3 py-2 text-left shadow-md backdrop-blur lg:hidden"
+          className="ct-menu absolute bottom-3 left-3 right-3 z-20 flex items-center gap-2 rounded-xl px-3 py-2 text-left lg:hidden"
         >
           <span className="min-w-0 flex-1">
             <span className="block font-mono text-[9px] text-faint">当前提问 · Q{String(ordinal).padStart(2, "0")}</span>
